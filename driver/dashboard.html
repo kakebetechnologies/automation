@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Driver Dashboard — Ireda Export Document System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+  <div class="sidebar-scrim"></div>
+
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark" id="brandMark"></div>
+      <div class="brand-text"><strong>Ireda Exports</strong><span>Driver App</span></div>
+    </div>
+
+    <div class="sidebar-role">
+      <div class="avatar" id="sideAvatar"></div>
+      <div class="who"><strong id="sideName"></strong><span id="sideRole"></span></div>
+    </div>
+
+    <nav class="sidebar-nav" id="sideNav">
+      <div class="nav-section-title">My Work</div>
+      <a href="#" class="nav-item active" data-view="overview"></a>
+      <a href="#" class="nav-item" data-view="history"></a>
+      <a href="#" class="nav-item" data-view="mydocs"></a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="collapse-btn" data-action="collapse-sidebar"></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="mobile-toggle" data-action="toggle-nav"></button>
+      <div class="topbar-title">
+        <h1 id="pageTitle">My Trip</h1>
+        <p id="pageSub">Everything you need for your assigned delivery.</p>
+      </div>
+      <div style="position:relative;">
+        <button class="icon-btn" data-action="toggle-dropdown" data-target="#notifPanel"><span class="dot"></span></button>
+        <div class="dropdown-panel" id="notifPanel" style="display:none; position:absolute; right:0; top:48px; width:300px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:var(--shadow-lg); z-index:50;">
+          <div style="padding:14px 16px; border-bottom:1px solid var(--border); font-weight:800; font-size:13px;">Notifications</div>
+          <div id="notifList" style="max-height:320px; overflow-y:auto;"></div>
+        </div>
+      </div>
+      <div class="topbar-user">
+        <div class="avatar" id="topAvatar"></div>
+        <div class="who"><strong id="topName"></strong><span id="topRole"></span></div>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- OVERVIEW: current trip -->
+      <section class="view" id="view-overview">
+        <div id="tripCard"></div>
+
+        <div class="grid-2 mt-16">
+          <div class="panel">
+            <div class="panel-header"><div><h3>Trip Documents</h3><p class="sub">Export paperwork for this delivery</p></div></div>
+            <div class="panel-body"><div class="doc-list" id="tripDocs"></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><h3>My Compliance Documents</h3><p class="sub">Required to be assigned trips</p></div></div>
+            <div class="panel-body"><div id="myDocsChecklist"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HISTORY -->
+      <section class="view" id="view-history" style="display:none;">
+        <div class="content-header"><div><h2>Trip History</h2><p class="sub">Your completed deliveries</p></div></div>
+        <div class="panel"><div class="table-wrap"><table class="data-table" id="historyTable"></table></div></div>
+      </section>
+
+      <!-- MY DOCS -->
+      <section class="view" id="view-mydocs" style="display:none;">
+        <div class="content-header">
+          <div><h2>My Documents</h2><p class="sub">Keep these up to date to remain eligible for trip assignments</p></div>
+          <div class="header-actions"><button class="btn btn-primary btn-sm" id="uploadDocBtn"></button></div>
+        </div>
+        <div class="grid-3" id="myDocsGrid"></div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Upload GRN Modal -->
+<div class="modal-overlay" id="modalGRN">
+  <div class="modal">
+    <div class="modal-header"><h3>Upload Goods Received Note</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body">
+      <p class="text-secondary" style="margin-bottom:16px;">Confirm delivery with the client's signature and a photo of the handover.</p>
+      <div class="field">
+        <label>Client Signature</label>
+        <div style="border:1.5px dashed var(--border-strong); border-radius:var(--r-md); height:100px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:12.5px; background:var(--surface-muted);">Tap to sign</div>
+      </div>
+      <div class="field">
+        <label>Delivery Photo</label>
+        <div class="doc-chip" style="border-style:dashed; cursor:pointer;">
+          <div class="doc-icon" id="cameraIcon"></div>
+          <div class="doc-info"><strong>Take or upload photo</strong><span>Proof of delivery</span></div>
+        </div>
+      </div>
+      <div class="field"><label>Quantity Confirmed by Client</label><input type="number" id="grnQty" placeholder="e.g. 2400"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-success" id="confirmGRNBtn">Confirm Delivery Complete</button>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/icons.js"></script>
+<script src="../assets/js/mock-data.js"></script>
+<script src="../assets/js/app.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>

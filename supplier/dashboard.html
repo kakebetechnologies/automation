@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supplier Dashboard — Ireda Export Document System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<div class="app-shell">
+  <div class="sidebar-scrim"></div>
+
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark" id="brandMark"></div>
+      <div class="brand-text"><strong>Sky Water / Ireda</strong><span>Supplier Portal</span></div>
+    </div>
+
+    <div class="sidebar-role">
+      <div class="avatar" id="sideAvatar"></div>
+      <div class="who"><strong id="sideName"></strong><span id="sideRole"></span></div>
+    </div>
+
+    <nav class="sidebar-nav" id="sideNav">
+      <div class="nav-section-title">Workspace</div>
+      <a href="#" class="nav-item active" data-view="overview"></a>
+      <a href="#" class="nav-item" data-view="fulfillment"></a>
+      <a href="#" class="nav-item" data-view="inventory"></a>
+      <a href="#" class="nav-item" data-view="deliveries"></a>
+      <a href="#" class="nav-item" data-view="documents"></a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="collapse-btn" data-action="collapse-sidebar"></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="mobile-toggle" data-action="toggle-nav"></button>
+      <div class="topbar-title">
+        <h1 id="pageTitle">Overview</h1>
+        <p id="pageSub">Coordinate production and dispatch for every confirmed order.</p>
+      </div>
+      <div class="search-box"><input type="text" placeholder="Search orders, batches…"></div>
+      <div style="position:relative;">
+        <button class="icon-btn" data-action="toggle-dropdown" data-target="#notifPanel"><span class="dot"></span></button>
+        <div class="dropdown-panel" id="notifPanel" style="display:none; position:absolute; right:0; top:48px; width:320px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:var(--shadow-lg); z-index:50;">
+          <div style="padding:14px 16px; border-bottom:1px solid var(--border); font-weight:800; font-size:13px;">Notifications</div>
+          <div id="notifList" style="max-height:340px; overflow-y:auto;"></div>
+        </div>
+      </div>
+      <div class="topbar-user">
+        <div class="avatar" id="topAvatar"></div>
+        <div class="who"><strong id="topName"></strong><span id="topRole"></span></div>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- OVERVIEW -->
+      <section class="view" id="view-overview">
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header">
+              <div><h3>Orders to Fulfill</h3><p class="sub">Payment confirmed — awaiting preparation</p></div>
+              <a href="#" class="panel-link" data-nav="fulfillment">View all &rarr;</a>
+            </div>
+            <div class="table-wrap"><table class="data-table" id="fulfillTablePreview"></table></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><h3>Inventory Snapshot</h3><p class="sub">Current stock levels</p></div></div>
+            <div class="panel-body" id="inventorySnapshot"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FULFILLMENT -->
+      <section class="view" id="view-fulfillment" style="display:none;">
+        <div class="content-header">
+          <div><h2>Orders to Fulfill</h2><p class="sub">Prepare goods, assign batch numbers, and mark ready for dispatch</p></div>
+        </div>
+        <div class="panel"><div class="table-wrap"><table class="data-table" id="fulfillTable"></table></div></div>
+      </section>
+
+      <!-- INVENTORY -->
+      <section class="view" id="view-inventory" style="display:none;">
+        <div class="content-header">
+          <div><h2>Inventory</h2><p class="sub">Live stock levels by product line</p></div>
+          <div class="header-actions"><button class="btn btn-primary btn-sm" id="updateStockBtn"></button></div>
+        </div>
+        <div class="grid-3" id="inventoryGrid"></div>
+      </section>
+
+      <!-- DELIVERIES -->
+      <section class="view" id="view-deliveries" style="display:none;">
+        <div class="content-header"><div><h2>Delivery Coordination</h2><p class="sub">Track dispatched orders in transit to destination</p></div></div>
+        <div class="panel"><div class="table-wrap"><table class="data-table" id="deliveriesTable"></table></div></div>
+      </section>
+
+      <!-- DOCUMENTS -->
+      <section class="view" id="view-documents" style="display:none;">
+        <div class="content-header"><div><h2>Documents</h2><p class="sub">Read-only access to export paperwork and payment confirmations</p></div></div>
+        <div class="panel card-pad">
+          <div class="field" style="max-width:320px; margin-bottom:20px;">
+            <label>Select Order</label>
+            <select id="docOrderSelect"></select>
+          </div>
+          <div class="doc-list" id="docList"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Mark Ready Modal -->
+<div class="modal-overlay" id="modalMarkReady">
+  <div class="modal">
+    <div class="modal-header"><h3>Confirm Goods Ready</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body">
+      <p class="text-secondary" id="markReadyOrderLabel" style="margin-bottom:16px;"></p>
+      <div class="field"><label>Batch Number</label><input placeholder="e.g. BT-2026-014" id="batchInput"></div>
+      <div class="field"><label>Notes for Merchant (optional)</label><textarea rows="3" placeholder="Any handling notes…"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-success" id="confirmReadyBtn">Mark Ready for Dispatch</button>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/icons.js"></script>
+<script src="../assets/js/mock-data.js"></script>
+<script src="../assets/js/app.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>
