@@ -51,6 +51,11 @@ const ICONS = {
   camera: `<path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.5" r="3.4"/>`,
   boxes: `<path d="M4 7.5 8.5 5l4.5 2.5-4.5 2.5L4 7.5Z"/><path d="M4 7.5v5l4.5 2.5M13 7.5v5L8.5 15"/><path d="M12 15.5 16 13l4 2.5-4 2.5-4-2.5Z"/><path d="M12 15.5v4l4 2.5M20 15.5v4l-4 2.5"/>`,
   msg: `<path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/>`,
+  mail: `<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>`,
+  printer: `<path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 15h12v6H6z"/>`,
+  image: `<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5-9 9"/>`,
+  inbox: `<path d="M4 4h16l2 8v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6l2-8Z"/><path d="M2 12h5.5l1.5 3h6l1.5-3H22"/>`,
+  navigation: `<path d="m3 11 18-8-8 18-2-8-8-2Z"/>`,
 };
 
 function icon(name, cls = "icon") {

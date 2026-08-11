@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ireda Export Document System — Sign In</title>
+<title>Falcon ERP — Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/style.css">
@@ -14,12 +14,9 @@
 
   <!-- Visual panel -->
   <div class="auth-visual">
-    <div class="flex items-center gap-12">
-      <div class="brand-mark"></div>
-      <div class="brand-text">
-        <strong style="font-size:16px;">Ireda Exports</strong>
-        <span>Sky Water Export Document System</span>
-      </div>
+    <div>
+      <img src="assets/img/logo-dark-bg.png" alt="Falcon Beverages" style="height:64px; width:auto; display:block;">
+      <div style="font-size:11.5px; font-weight:700; letter-spacing:.04em; color:rgba(255,255,255,.7); margin-top:10px; text-transform:uppercase;">Falcon ERP &middot; Export &amp; Trade Operations Platform</div>
     </div>
 
     <div class="auth-headline">
@@ -27,10 +24,16 @@
       <p>Orders, contracts, payments, dispatch and customs documents — tracked automatically across Merchant, Supplier, Client and Driver, so nothing gets lost in WhatsApp or paper again.</p>
     </div>
 
-    <div class="auth-stats">
-      <div><strong>156</strong><span>Orders Managed</span></div>
-      <div><strong>4</strong><span>Countries Served</span></div>
-      <div><strong>99.2%</strong><span>On-Time Delivery</span></div>
+    <div>
+      <div class="auth-stats">
+        <div><strong>156</strong><span>Orders Managed</span></div>
+        <div><strong>4</strong><span>Countries Served</span></div>
+        <div><strong>99.2%</strong><span>On-Time Delivery</span></div>
+      </div>
+      <div style="margin-top:22px; padding-top:18px; border-top:1px solid rgba(255,255,255,.15); font-size:12px; color:rgba(255,255,255,.65); line-height:1.7;">
+        Registered Office: Ireda, Lira City, Uganda &middot; Operations Office: Elegu Border Post, Amuru, Uganda<br>
+        +256 (0)200 340 409 &middot; +256 (0)394 009742 &middot; info@falconbeverages.co.ug
+      </div>
     </div>
   </div>
 
@@ -52,7 +55,7 @@
       <form id="loginForm">
         <div class="field">
           <label>Email or Username</label>
-          <input type="text" id="loginEmail" placeholder="you@company.com" value="merchant@ireda.co.ug" required>
+          <input type="text" id="loginEmail" placeholder="you@company.com" value="merchant@falconbeverages.co.ug" required>
         </div>
         <div class="field">
           <label>Password</label>
@@ -76,13 +79,12 @@
 
 <script src="assets/js/icons.js"></script>
 <script>
-  document.querySelector(".auth-visual .brand-mark").innerHTML = icon("droplet", "icon");
   document.querySelector(".demo-note").innerHTML = icon("info","icon") + " Demo build — pick a role below and sign in with any credentials to preview that dashboard.";
   document.getElementById("loginSubmit").innerHTML = 'Sign In as <span id="roleLabel">Merchant</span>' + icon("chevronRight","icon");
 
   const roleIcons = { merchant: "briefcase", supplier: "boxes", client: "clients", driver: "truck" };
   const roleNames = { merchant: "Merchant", supplier: "Supplier", client: "Client", driver: "Driver" };
-  const roleEmails = { merchant: "merchant@ireda.co.ug", supplier: "ops@skywater.co.ug", client: "deng@abctrading.ss", driver: "john.odongo@ireda.co.ug" };
+  const roleEmails = { merchant: "merchant@falconbeverages.co.ug", supplier: "ops@skywaterug.com", client: "deng@abctrading.ss", driver: "john.odongo@falconbeverages.co.ug" };
 
   document.querySelectorAll(".role-tab").forEach(tab => {
     const r = tab.dataset.role;

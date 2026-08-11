@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Merchant Dashboard — Ireda Export Document System</title>
+<title>Merchant Dashboard — Falcon ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/style.css">
@@ -16,8 +16,8 @@
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <div class="brand-mark" id="brandMark"></div>
-      <div class="brand-text"><strong>Ireda Exports</strong><span>Merchant Console</span></div>
+      <div class="sidebar-logo-wrap"><img src="../assets/img/logo-mark-dark-bg.png" alt="Falcon Beverages"></div>
+      <div class="sidebar-product-tag">Falcon ERP &middot; Merchant Console</div>
     </div>
 
     <div class="sidebar-role">
@@ -28,6 +28,8 @@
     <nav class="sidebar-nav" id="sideNav">
       <div class="nav-section-title">Workspace</div>
       <a href="#" class="nav-item active" data-view="overview"></a>
+      <a href="#" class="nav-item" data-view="clientrequests"></a>
+      <a href="#" class="nav-item" data-view="supplierorders"></a>
       <a href="#" class="nav-item" data-view="orders"></a>
       <a href="#" class="nav-item" data-view="products"></a>
 
@@ -43,6 +45,7 @@
 
     <div class="sidebar-footer">
       <button class="collapse-btn" data-action="collapse-sidebar"></button>
+      <a href="../index.html" class="logout-btn" id="logoutBtn"></a>
     </div>
   </aside>
 
@@ -109,6 +112,30 @@
               <button class="btn btn-secondary btn-block" style="justify-content:flex-start;" data-modal-open="modalDriverAssign"></button>
               <button class="btn btn-secondary btn-block" style="justify-content:flex-start;" data-nav="reports"></button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ CLIENT REQUESTS ============ -->
+      <section class="view" id="view-clientrequests" style="display:none;">
+        <div class="content-header">
+          <div><h2>Client Requests</h2><p class="sub">Product requests from clients — approve, confirm payment, source & dispatch</p></div>
+        </div>
+        <div class="panel"><div class="table-wrap"><table class="data-table" id="requestsTable"></table></div></div>
+      </section>
+
+      <!-- ============ SUPPLIER ORDERS ============ -->
+      <section class="view" id="view-supplierorders" style="display:none;">
+        <div class="content-header">
+          <div><h2>Supplier Orders</h2><p class="sub">Browse every supplier's catalog and place a purchase order</p></div>
+        </div>
+        <div class="grid-2" style="grid-template-columns:2fr 1fr; align-items:start;">
+          <div>
+            <div class="grid-3" id="supplierCatalogGrid" style="margin-bottom:20px;"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><h3>Recent Purchase Orders</h3><p class="sub">Sent to your suppliers</p></div></div>
+            <div class="panel-body" id="recentPOList"></div>
           </div>
         </div>
       </section>
@@ -198,10 +225,20 @@
           <div class="panel card-pad">
             <h3 style="font-size:14px; margin-bottom:16px;">Company Profile</h3>
             <div class="field-row">
-              <div class="field"><label>Company Name</label><input value="Ireda Exports"></div>
+              <div class="field"><label>Company Name</label><input value="Falcon Beverages (U) Ltd"></div>
               <div class="field"><label>Base Currency</label><select><option>USD</option><option>UGX</option></select></div>
             </div>
-            <div class="field"><label>Registered Address</label><input value="Lira City, Uganda"></div>
+            <div class="field-row">
+              <div class="field"><label>Registered Office</label><input value="Ireda, Lira City, Uganda"></div>
+              <div class="field"><label>Operations Office</label><input value="Elegu Border Post, Amuru, Uganda"></div>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>Phone</label><input value="+256 (0)200 340 409 / +256 (0)394 009742"></div>
+              <div class="field"><label>Email</label><input value="info@falconbeverages.co.ug"></div>
+            </div>
+            <div class="field"><label>Sales / Orders Inbox</label><input value="orders@falconbeverages.co.ug">
+              <p class="hint">Automated replies to customer orders placed online are sent from this address.</p>
+            </div>
             <button class="btn btn-primary">Save Changes</button>
           </div>
           <div class="panel card-pad">
@@ -286,8 +323,94 @@
   </div>
 </div>
 
+<!-- Request Detail Modal (approve / reject / payment / source / dispatch / assign) -->
+<div class="modal-overlay" id="modalRequestDetail">
+  <div class="modal modal-lg">
+    <div class="modal-header"><h3 id="requestDetailTitle">Request Detail</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body" id="requestDetailBody"></div>
+    <div class="modal-footer" id="requestDetailFooter"></div>
+  </div>
+</div>
+
+<!-- Reject Request Modal -->
+<div class="modal-overlay" id="modalRejectRequest">
+  <div class="modal">
+    <div class="modal-header"><h3>Reject Request</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body">
+      <div class="field"><label>Reason</label><textarea rows="3" id="rejectReasonInput" placeholder="e.g. Insufficient stock for this destination right now"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-danger" id="confirmRejectBtn">Reject Request</button>
+    </div>
+  </div>
+</div>
+
+<!-- Source from Supplier Modal -->
+<div class="modal-overlay" id="modalSourceSupplier">
+  <div class="modal">
+    <div class="modal-header"><h3>Source Goods from Supplier</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body">
+      <p class="text-secondary" id="sourceRequestLabel" style="margin-bottom:16px;"></p>
+      <div class="field"><label>Supplier</label><select id="sourceSupplierSelect"></select></div>
+      <p class="hint">This creates a Purchase Order and a Supplier Invoice billed to Falcon Beverages (U) Ltd.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" id="confirmSourceBtn">Place Purchase Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Driver to Request Modal -->
+<div class="modal-overlay" id="modalAssignRequestDriver">
+  <div class="modal">
+    <div class="modal-header"><h3>Assign Driver &amp; Pickup Details</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body">
+      <p class="text-secondary" id="assignRequestLabel" style="margin-bottom:16px;"></p>
+      <div class="field"><label>Driver</label><select id="assignRequestDriverSelect"></select></div>
+      <div class="field"><label>Pickup Location (track details for driver)</label><input id="assignPickupLocation" readonly></div>
+      <p class="hint">Only drivers with complete compliance documents can be assigned. The driver will see this pickup location on their dashboard.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" id="confirmAssignRequestBtn">Assign Driver</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order From Supplier Modal -->
+<div class="modal-overlay" id="modalOrderFromSupplier">
+  <div class="modal">
+    <div class="modal-header"><h3>Place Purchase Order</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body">
+      <p class="text-secondary" id="poProductLabel" style="margin-bottom:16px;"></p>
+      <div class="field"><label>Quantity (units)</label><input type="number" id="poQtyInput" placeholder="e.g. 2000"></div>
+      <div class="field-price"><span style="font-size:12px; color:var(--brand-700); font-weight:700;">ESTIMATED TOTAL</span><strong id="poEstimate">$0</strong></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" id="confirmPOBtn">Place Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- Document Viewer Modal (view / print / download) -->
+<div class="modal-overlay" id="modalDocViewer">
+  <div class="modal modal-lg">
+    <div class="modal-header"><h3 id="docViewerTitle">Document</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body"><div class="doc-preview" id="docViewerBody"></div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Close</button>
+      <button class="btn btn-secondary" id="docViewerPrintBtn"></button>
+      <button class="btn btn-primary" id="docViewerDownloadBtn"></button>
+    </div>
+  </div>
+</div>
+
 <script src="../assets/js/icons.js"></script>
 <script src="../assets/js/mock-data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script src="../assets/js/app.js"></script>
 <script src="dashboard.js"></script>
 </body>

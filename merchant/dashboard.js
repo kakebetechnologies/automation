@@ -6,6 +6,8 @@ const user = CURRENT_USER.merchant;
 
 const NAV_META = {
   overview: { icon: "dashboard", label: "Overview" },
+  clientrequests: { icon: "inbox", label: "Client Requests", badge: null },
+  supplierorders: { icon: "boxes", label: "Supplier Orders" },
   orders: { icon: "orders", label: "All Orders", badge: ORDERS.filter(o => !["Delivered","Cancelled"].includes(o.status)).length },
   products: { icon: "products", label: "Products" },
   clients: { icon: "clients", label: "Clients" },
@@ -16,6 +18,8 @@ const NAV_META = {
 };
 const PAGE_SUB = {
   overview: "Welcome back — here's what's happening across your export business today.",
+  clientrequests: "Product requests from clients — approve, confirm payment, source & dispatch.",
+  supplierorders: "Browse every supplier's catalog and place a purchase order.",
   orders: "Every purchase order across all clients and countries.",
   products: "Manage water sizes, packaging and pricing.",
   clients: "Buyers importing Sky Water into South Sudan, DRC & Kenya.",
@@ -25,8 +29,18 @@ const PAGE_SUB = {
   settings: "System configuration and user management.",
 };
 
+const REQUEST_STATUS_BADGE = {
+  "Pending Approval": "badge-warning", "Rejected": "badge-danger", "Awaiting Payment": "badge-warning",
+  "Payment Submitted": "badge-info", "Paid": "badge-info", "Sourcing": "badge-violet",
+  "Ready for Dispatch": "badge-violet", "Assigned": "badge-info", "Picked Up": "badge-info",
+  "In Transit": "badge-info", "Border Crossed": "badge-info", "Delivered": "badge-success",
+};
+function reqBadge(status) { return `<span class="badge ${REQUEST_STATUS_BADGE[status] || "badge-neutral"}">${status}</span>`; }
+
 function renderChrome() {
-  document.getElementById("brandMark").innerHTML = icon("droplet");
+  const pendingReqCount = listClientRequests().filter(r => r.status === "Pending Approval" || r.status === "Payment Submitted").length;
+  NAV_META.clientrequests.badge = pendingReqCount || null;
+
   document.getElementById("sideAvatar").textContent = user.initials;
   document.getElementById("sideName").textContent = user.name;
   document.getElementById("sideRole").textContent = user.role;
@@ -58,7 +72,8 @@ function renderChrome() {
 }
 
 function renderNotifications() {
-  document.getElementById("notifList").innerHTML = NOTIFICATIONS.map(n => `
+  const merged = mergeStoreNotifications("merchant", NOTIFICATIONS);
+  document.getElementById("notifList").innerHTML = merged.map(n => `
     <div class="doc-chip" style="border:none; border-bottom:1px solid var(--border); border-radius:0; background:none;">
       <div class="doc-icon kpi-icon ${n.color}" style="width:34px;height:34px;">${icon(n.icon)}</div>
       <div class="doc-info"><strong style="font-weight:600; white-space:normal;">${n.text}</strong><span>${n.time}</span></div>
@@ -255,6 +270,233 @@ function renderReports() {
     </div>`).join("");
 }
 
+/* =========================================================
+   Client Requests — approval, payment, sourcing, dispatch, driver
+   ========================================================= */
+let activeRequestId = null;
+
+function renderClientRequests() {
+  const reqs = [...listClientRequests()].reverse();
+  document.getElementById("requestsTable").innerHTML = `
+    <thead><tr><th>Request</th><th>Client</th><th>Product</th><th>Total</th><th>Status</th><th></th></tr></thead>
+    <tbody>${reqs.map(r => `
+      <tr class="request-row" data-req="${r.id}" style="cursor:pointer;">
+        <td><span class="cell-strong">${r.id}</span><br><span class="cell-muted">${r.createdDate}</span></td>
+        <td class="cell-flex"><div class="mini-avatar">${initials(r.client)}</div><div><div class="cell-strong">${r.client}</div><div class="cell-muted">${r.destination}</div></div></td>
+        <td>${r.product}<br><span class="cell-muted">${r.qty.toLocaleString()} units</span></td>
+        <td class="cell-strong">${fmtMoney(r.total)}</td>
+        <td>${reqBadge(r.status)}</td>
+        <td style="text-align:right;"><button class="icon-btn btn-sm">${icon("eye")}</button></td>
+      </tr>`).join("") || `<tr><td colspan="6"><div class="empty-state">No client requests yet</div></td></tr>`}</tbody>`;
+
+  document.querySelectorAll(".request-row").forEach(row => row.addEventListener("click", () => openRequestDetail(row.dataset.req)));
+}
+
+function requestInvoiceHTML(req, inv) {
+  return docPreviewHTML({
+    title: "Sales Invoice",
+    subtitle: `Issued by Falcon Beverages (U) Ltd to ${req.client}`,
+    fields: [
+      { label: "Invoice No.", value: inv.id },
+      { label: "Request Ref.", value: req.id },
+      { label: "Client", value: req.client },
+      { label: "Destination", value: req.destination },
+      { label: "Issued", value: inv.issuedDate },
+      { label: "Status", value: inv.status },
+    ],
+    tableRows: {
+      head: ["Description", "Qty (units)", "Unit Price", "Total"],
+      rows: [[req.product, req.qty.toLocaleString(), `$${req.unitUSD.toFixed(2)}`, fmtMoney(req.total)]],
+    },
+    note: "Please complete payment once this invoice is approved, then upload your payment receipt on your dashboard.",
+    stamp: inv.status === "Paid" ? "PAID" : inv.status === "Approved" ? "APPROVED" : "PENDING",
+  });
+}
+
+function openRequestDetail(reqId) {
+  activeRequestId = reqId;
+  const req = getClientRequest(reqId);
+  const inv = getClientInvoice(reqId);
+  document.getElementById("requestDetailTitle").textContent = `${req.id} — ${req.client}`;
+
+  let extra = "";
+  if (req.status === "Rejected") {
+    extra = `<div class="panel card-pad" style="box-shadow:none; background:var(--danger-50); margin-top:16px;"><p class="cell-strong" style="color:var(--danger-600);">Rejected</p><p class="cell-muted mt-8">${req.rejectReason}</p></div>`;
+  }
+  if (req.receipt) {
+    extra += `<div class="panel card-pad" style="box-shadow:none; background:var(--surface-muted); margin-top:16px;">
+      <p class="cell-muted">Payment Receipt</p>
+      <p class="cell-strong">${req.receipt.method} &middot; ${fmtMoney(req.receipt.amount)} &middot; uploaded ${req.receipt.uploadedDate}</p>
+    </div>`;
+  }
+  if (req.supplier) {
+    extra += `<div class="panel card-pad" style="box-shadow:none; background:var(--surface-muted); margin-top:16px;">
+      <p class="cell-muted">Sourced From</p>
+      <p class="cell-strong">${req.supplier} &middot; PO ${req.purchaseOrderId}</p>
+      <button class="btn btn-secondary btn-sm mt-8" id="viewSupplierInvBtn">${icon("eye","icon")} View Supplier Invoice</button>
+    </div>`;
+  }
+  if (req.driver) {
+    extra += `<div class="panel card-pad" style="box-shadow:none; background:var(--surface-muted); margin-top:16px;">
+      <p class="cell-muted">Assigned Driver</p>
+      <p class="cell-strong">${req.driver}</p>
+    </div>`;
+  }
+  const events = getTrackingEvents(reqId);
+  if (events.length) {
+    extra += `<div class="panel card-pad" style="box-shadow:none; background:var(--surface-muted); margin-top:16px;">
+      <p class="cell-muted" style="margin-bottom:10px;">Tracking Timeline</p>
+      <div class="timeline">${events.map(e => `
+        <div class="timeline-item">
+          <div class="timeline-dot" style="background:var(--brand-100); color:var(--brand-700);">${icon("mapPin")}</div>
+          <div class="timeline-content"><strong>${e.type}</strong><p>${e.driver || ""} ${e.vehicle ? "&middot; " + e.vehicle : ""} ${e.geoStatus === "ok" ? `&middot; <a href="https://www.google.com/maps?q=${e.lat},${e.lng}" target="_blank" rel="noopener">View location</a>` : ""}</p><time>${new Date(e.timestamp).toLocaleString()}</time></div>
+        </div>`).join("")}</div>
+    </div>`;
+  }
+
+  document.getElementById("requestDetailBody").innerHTML = `
+    <div class="grid-2" style="grid-template-columns: 1fr 1fr;">
+      <div><p class="cell-muted">Client</p><p class="cell-strong">${req.client}</p></div>
+      <div><p class="cell-muted">Status</p>${reqBadge(req.status)}</div>
+      <div><p class="cell-muted">Destination</p><p class="cell-strong">${req.destination}</p></div>
+      <div><p class="cell-muted">Requested</p><p class="cell-strong">${req.createdDate}</p></div>
+      <div><p class="cell-muted">Product</p><p class="cell-strong">${req.product} &middot; ${req.qty.toLocaleString()} units</p></div>
+      <div><p class="cell-muted">Total</p><p class="cell-strong">${fmtMoney(req.total)}</p></div>
+    </div>
+    <button class="btn btn-secondary btn-sm mt-16" id="viewClientInvBtn">${icon("eye","icon")} View Sales Invoice</button>
+    ${extra}`;
+
+  document.getElementById("viewClientInvBtn").addEventListener("click", () => {
+    openDocViewer("Sales Invoice", requestInvoiceHTML(req, inv), `${inv.id}-${req.client}`);
+  });
+  document.getElementById("viewSupplierInvBtn")?.addEventListener("click", () => viewMerchantSupplierInvoice(req.supplierInvoiceId));
+
+  renderRequestFooter(req);
+  openModal("modalRequestDetail");
+}
+
+function renderRequestFooter(req) {
+  const footer = document.getElementById("requestDetailFooter");
+  let html = `<button class="btn btn-secondary" data-modal-close>Close</button>`;
+
+  if (req.status === "Pending Approval") {
+    html += `<button class="btn btn-danger" id="btnReject">Reject</button><button class="btn btn-primary" id="btnApprove">Approve Request</button>`;
+  } else if (req.status === "Payment Submitted") {
+    html += `<button class="btn btn-primary" id="btnConfirmPayment">Confirm Payment</button>`;
+  } else if (req.status === "Paid") {
+    html += `<button class="btn btn-primary" id="btnSource">Source from Supplier</button>`;
+  } else if (req.status === "Sourcing") {
+    html += `<span class="text-secondary" style="align-self:center; font-size:12.5px;">Waiting for supplier to prepare goods…</span>`;
+  } else if (req.status === "Ready for Dispatch") {
+    html += `<button class="btn btn-primary" id="btnDispatchAssign">Generate Dispatch Note &amp; Assign Driver</button>`;
+  }
+
+  footer.innerHTML = html;
+  document.getElementById("btnApprove")?.addEventListener("click", () => { approveRequest(req.id); refreshRequestUI(req.id); toast("Request approved. Client notified to make payment."); });
+  document.getElementById("btnReject")?.addEventListener("click", () => { closeModal("modalRequestDetail"); document.getElementById("rejectReasonInput").value = ""; openModal("modalRejectRequest"); });
+  document.getElementById("btnConfirmPayment")?.addEventListener("click", () => { confirmPayment(req.id); refreshRequestUI(req.id); toast("Payment confirmed. Client notified — sourcing goods next."); });
+  document.getElementById("btnSource")?.addEventListener("click", () => openSourceSupplierModal(req.id));
+  document.getElementById("btnDispatchAssign")?.addEventListener("click", () => openAssignRequestDriverModal(req.id));
+}
+
+function refreshRequestUI(reqId) {
+  renderChrome();
+  renderClientRequests();
+  if (document.getElementById("modalRequestDetail").classList.contains("open")) openRequestDetail(reqId);
+}
+
+function viewMerchantSupplierInvoice(invId) {
+  const inv = getSupplierInvoice(invId);
+  const html = docPreviewHTML({
+    title: "Supplier Invoice",
+    subtitle: `Issued by ${inv.supplier} to ${inv.billedTo}`,
+    fields: [
+      { label: "Invoice No.", value: inv.id }, { label: "Purchase Order", value: inv.poId },
+      { label: "Supplier", value: inv.supplier }, { label: "Issued", value: inv.issuedDate },
+    ],
+    tableRows: { head: ["Description", "Qty (units)", "Unit Price", "Total"], rows: [[inv.product, inv.qty.toLocaleString(), `$${inv.unitUSD.toFixed(2)}`, fmtMoney(inv.total)]] },
+    note: "This is proof of supply from your supplier — also available to the assigned driver at pickup and border crossings.",
+  });
+  openDocViewer("Supplier Invoice", html, `${inv.id}-${inv.supplier}`);
+}
+
+function openSourceSupplierModal(reqId) {
+  const req = getClientRequest(reqId);
+  document.getElementById("sourceRequestLabel").innerHTML = `<strong>${req.id}</strong> — ${req.product} &middot; ${req.qty.toLocaleString()} units for ${req.client}`;
+  const carriers = [...new Set(listSupplierProducts().filter(p => p.name === req.product).map(p => p.supplier))];
+  const options = carriers.length ? carriers : listAvailableSuppliers();
+  document.getElementById("sourceSupplierSelect").innerHTML = options.map(s => `<option>${s}</option>`).join("");
+  if (!carriers.length) toast("No supplier currently lists this exact product — showing all suppliers.", "info");
+  closeModal("modalRequestDetail");
+  openModal("modalSourceSupplier");
+  document.getElementById("confirmSourceBtn").onclick = () => {
+    const supplier = document.getElementById("sourceSupplierSelect").value;
+    sourceFromSupplier(reqId, supplier);
+    closeModal("modalSourceSupplier");
+    toast(`Purchase order sent to ${supplier}.`);
+    openRequestDetail(reqId);
+  };
+}
+
+function openAssignRequestDriverModal(reqId) {
+  const req = getClientRequest(reqId);
+  const dn = generateDispatchNote(reqId);
+  document.getElementById("assignRequestLabel").innerHTML = `<strong>${req.id}</strong> — ${req.product} &middot; ${req.qty.toLocaleString()} units. Dispatch note ${dn.id} generated.`;
+  document.getElementById("assignPickupLocation").value = dn.pickupLocation;
+  document.getElementById("assignRequestDriverSelect").innerHTML = DRIVERS.filter(d => d.status === "Available" && d.docsComplete).map(d => `<option>${d.name}</option>`).join("") || `<option>No available drivers</option>`;
+  closeModal("modalRequestDetail");
+  openModal("modalAssignRequestDriver");
+  document.getElementById("confirmAssignRequestBtn").onclick = () => {
+    const driver = document.getElementById("assignRequestDriverSelect").value;
+    assignDriverToRequest(reqId, driver);
+    closeModal("modalAssignRequestDriver");
+    toast(`${driver} assigned — pickup details sent to their dashboard.`);
+    refreshRequestUI(reqId);
+  };
+}
+
+/* =========================================================
+   Supplier Orders — browse catalog, place purchase orders
+   ========================================================= */
+function renderSupplierOrders() {
+  const products = listSupplierProducts();
+  document.getElementById("supplierCatalogGrid").innerHTML = products.map(p => `
+    <div class="panel card-pad">
+      <div class="flex items-center justify-between" style="margin-bottom:14px;">
+        <div class="kpi-icon teal">${icon("droplets")}</div>
+        <span class="badge badge-neutral">${p.type}</span>
+      </div>
+      <h3 style="font-size:14.5px;">${p.name}</h3>
+      <p class="cell-muted mt-8">${p.supplier}</p>
+      <div class="divider"></div>
+      <div class="flex justify-between"><span class="cell-muted">Price</span><strong>$${p.priceUSD.toFixed(2)}</strong></div>
+      <div class="flex justify-between mt-8"><span class="cell-muted">In Stock</span><strong>${p.stock.toLocaleString()}</strong></div>
+      <button class="btn btn-primary btn-sm w-full mt-16" data-order-product="${p.id}">${icon("plus","icon")} Order</button>
+    </div>`).join("");
+
+  document.querySelectorAll("[data-order-product]").forEach(btn => btn.addEventListener("click", () => openPOModal(btn.dataset.orderProduct)));
+
+  const pos = [...listPurchaseOrders()].reverse().slice(0, 6);
+  document.getElementById("recentPOList").innerHTML = pos.map(po => `
+    <div class="flex items-center justify-between" style="padding:8px 0; border-bottom:1px solid var(--border);">
+      <div><div class="cell-strong" style="font-size:12.5px;">${po.id}</div><div class="cell-muted">${po.supplier} &middot; ${po.product}</div></div>
+      <span class="badge ${po.status === "Prepared" ? "badge-success" : "badge-warning"}">${po.status}</span>
+    </div>`).join("") || `<div class="empty-state">No purchase orders yet</div>`;
+}
+
+let poProduct = null;
+function openPOModal(productId) {
+  poProduct = listSupplierProducts().find(p => p.id === productId);
+  document.getElementById("poProductLabel").innerHTML = `<strong>${poProduct.name}</strong> from ${poProduct.supplier} &middot; $${poProduct.priceUSD.toFixed(2)} / unit`;
+  document.getElementById("poQtyInput").value = 1000;
+  updatePOEstimate();
+  openModal("modalOrderFromSupplier");
+}
+function updatePOEstimate() {
+  const qty = parseInt(document.getElementById("poQtyInput").value) || 0;
+  document.getElementById("poEstimate").textContent = fmtMoney(qty * poProduct.priceUSD);
+}
+
 function populateAssignModal() {
   document.getElementById("assignOrderSelect").innerHTML = ORDERS.filter(o => o.driver === "-").map(o => `<option value="${o.id}">${o.id} — ${o.client}</option>`).join("") || `<option>No orders awaiting driver</option>`;
   document.getElementById("assignDriverSelect").innerHTML = DRIVERS.filter(d => d.status === "Available" && d.docsComplete).map(d => `<option>${d.name}</option>`).join("") || `<option>No available drivers</option>`;
@@ -287,6 +529,24 @@ function initFormActions() {
   document.querySelector("[data-modal-open='modalDriverAssign']")?.addEventListener("click", populateAssignModal);
   document.getElementById("exportOrdersBtn").addEventListener("click", () => toast("Orders exported to CSV.", "info"));
   document.getElementById("filterBtn").addEventListener("click", () => toast("Filter panel coming soon.", "info"));
+
+  document.getElementById("confirmRejectBtn").addEventListener("click", () => {
+    const reason = document.getElementById("rejectReasonInput").value.trim();
+    rejectRequest(activeRequestId, reason);
+    closeModal("modalRejectRequest");
+    refreshRequestUI(activeRequestId);
+    toast("Request rejected. Client notified.");
+  });
+
+  document.getElementById("poQtyInput").addEventListener("input", updatePOEstimate);
+  document.getElementById("confirmPOBtn").addEventListener("click", () => {
+    const qty = parseInt(document.getElementById("poQtyInput").value) || 0;
+    if (qty <= 0) { toast("Enter a valid quantity.", "error"); return; }
+    createPurchaseOrder(poProduct.supplier, poProduct.name, qty, poProduct.priceUSD, null);
+    closeModal("modalOrderFromSupplier");
+    renderSupplierOrders();
+    toast(`Purchase order sent to ${poProduct.supplier}.`);
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -302,6 +562,8 @@ document.addEventListener("DOMContentLoaded", () => {
   renderDrivers();
   renderDocuments();
   renderReports();
+  renderClientRequests();
+  renderSupplierOrders();
   initNav();
   initFormActions();
 });

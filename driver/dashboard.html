@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Driver Dashboard — Ireda Export Document System</title>
+<title>Driver Dashboard — Falcon ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/style.css">
@@ -15,12 +15,16 @@
 
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <div class="brand-mark" id="brandMark"></div>
-      <div class="brand-text"><strong>Ireda Exports</strong><span>Driver App</span></div>
+      <div class="sidebar-logo-wrap"><img src="../assets/img/logo-mark-dark-bg.png" alt="Falcon Beverages"></div>
+      <div class="sidebar-product-tag">Falcon ERP &middot; Driver App</div>
     </div>
 
     <div class="sidebar-role">
-      <div class="avatar" id="sideAvatar"></div>
+      <div class="avatar-upload">
+        <div class="avatar" id="sideAvatar"></div>
+        <button class="avatar-edit-badge" id="avatarEditBadge" type="button" title="Change profile photo"></button>
+        <input type="file" id="avatarFileInput" accept="image/*" style="display:none;">
+      </div>
       <div class="who"><strong id="sideName"></strong><span id="sideRole"></span></div>
     </div>
 
@@ -33,6 +37,7 @@
 
     <div class="sidebar-footer">
       <button class="collapse-btn" data-action="collapse-sidebar"></button>
+      <a href="../index.html" class="logout-btn" id="logoutBtn"></a>
     </div>
   </aside>
 
@@ -62,13 +67,17 @@
       <section class="view" id="view-overview">
         <div id="tripCard"></div>
 
-        <div class="grid-2 mt-16">
+        <div class="grid-3 mt-16">
           <div class="panel">
             <div class="panel-header"><div><h3>Trip Documents</h3><p class="sub">Export paperwork for this delivery</p></div></div>
             <div class="panel-body"><div class="doc-list" id="tripDocs"></div></div>
           </div>
           <div class="panel">
-            <div class="panel-header"><div><h3>My Compliance Documents</h3><p class="sub">Required to be assigned trips</p></div></div>
+            <div class="panel-header"><div><h3>Client Contact</h3><p class="sub">Reach out about this delivery</p></div></div>
+            <div class="panel-body" id="clientContactBody"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><h3>My Compliance Documents</h3><p class="sub">Uploaded &amp; verified by your administrator</p></div></div>
             <div class="panel-body"><div id="myDocsChecklist"></div></div>
           </div>
         </div>
@@ -83,8 +92,7 @@
       <!-- MY DOCS -->
       <section class="view" id="view-mydocs" style="display:none;">
         <div class="content-header">
-          <div><h2>My Documents</h2><p class="sub">Keep these up to date to remain eligible for trip assignments</p></div>
-          <div class="header-actions"><button class="btn btn-primary btn-sm" id="uploadDocBtn"></button></div>
+          <div><h2>My Documents</h2><p class="sub">Uploaded and verified by your Merchant administrator — view, print or download any time</p></div>
         </div>
         <div class="grid-3" id="myDocsGrid"></div>
       </section>
@@ -119,8 +127,22 @@
   </div>
 </div>
 
+<!-- Document Viewer Modal (view / print / download) -->
+<div class="modal-overlay" id="modalDocViewer">
+  <div class="modal modal-lg">
+    <div class="modal-header"><h3 id="docViewerTitle">Document</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body"><div class="doc-preview" id="docViewerBody"></div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Close</button>
+      <button class="btn btn-secondary" id="docViewerPrintBtn"></button>
+      <button class="btn btn-primary" id="docViewerDownloadBtn"></button>
+    </div>
+  </div>
+</div>
+
 <script src="../assets/js/icons.js"></script>
 <script src="../assets/js/mock-data.js"></script>
+<script src="../assets/js/store.js"></script>
 <script src="../assets/js/app.js"></script>
 <script src="dashboard.js"></script>
 </body>

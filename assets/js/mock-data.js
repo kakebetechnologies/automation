@@ -1,5 +1,5 @@
 /* =========================================================
-   Mock Data — Ireda Export Document System
+   Mock Data — Falcon ERP
    Replace with real API calls once the backend is wired up.
    ========================================================= */
 
@@ -29,11 +29,11 @@ const ORDERS = [
 ];
 
 const CLIENTS = [
-  { name: "ABC Trading Co.", country: "South Sudan", contact: "Deng Malual", email: "deng@abctrading.ss", orders: 14, totalValue: 48200, status: "Active" },
-  { name: "XYZ Logistics Ltd", country: "DR Congo", contact: "Aline Kabongo", email: "aline@xyzlogistics.cd", orders: 9, totalValue: 31500, status: "Active" },
-  { name: "DEF Commodities", country: "Kenya", contact: "Brian Wanjala", email: "brian@defcom.ke", orders: 6, totalValue: 19800, status: "Active" },
-  { name: "GHI Traders Co.", country: "South Sudan", contact: "Nyandeng Akol", email: "nyandeng@ghitraders.ss", orders: 4, totalValue: 12100, status: "Active" },
-  { name: "Nile Fresh Ltd", country: "Kenya", contact: "Kevin Otieno", email: "kevin@nilefresh.ke", orders: 2, totalValue: 5200, status: "New" },
+  { name: "ABC Trading Co.", country: "South Sudan", contact: "Deng Malual", email: "deng@abctrading.ss", phone: "+211 922 445 810", orders: 14, totalValue: 48200, status: "Active" },
+  { name: "XYZ Logistics Ltd", country: "DR Congo", contact: "Aline Kabongo", email: "aline@xyzlogistics.cd", phone: "+243 828 114 902", orders: 9, totalValue: 31500, status: "Active" },
+  { name: "DEF Commodities", country: "Kenya", contact: "Brian Wanjala", email: "brian@defcom.ke", phone: "+254 722 331 087", orders: 6, totalValue: 19800, status: "Active" },
+  { name: "GHI Traders Co.", country: "South Sudan", contact: "Nyandeng Akol", email: "nyandeng@ghitraders.ss", phone: "+211 916 220 774", orders: 4, totalValue: 12100, status: "Active" },
+  { name: "Nile Fresh Ltd", country: "Kenya", contact: "Kevin Otieno", email: "kevin@nilefresh.ke", phone: "+254 700 552 118", orders: 2, totalValue: 5200, status: "New" },
 ];
 
 const DRIVERS = [
@@ -63,8 +63,8 @@ const NOTIFICATIONS = [
 ];
 
 const CURRENT_USER = {
-  merchant: { name: "Sedrick Otolo", role: "Merchant / System Owner", company: "Ireda Exports", initials: "SO" },
-  supplier: { name: "Sky Water Ops", role: "Supplier — Ireda", company: "Sky Water Ltd", initials: "SW" },
+  merchant: { name: "Sedrick Otolo", role: "Merchant / System Owner", company: "Falcon Beverages (U) Ltd", initials: "SO" },
+  supplier: { name: "Sky Water Ops", role: "Supplier Partner", company: "Sky Water (U) Ltd", initials: "SW" },
   client:   { name: "Deng Malual", role: "Client — ABC Trading Co.", company: "South Sudan", initials: "DM" },
   driver:   { name: "John Odongo", role: "Driver", company: "Fleet #04", initials: "JO" },
 };
