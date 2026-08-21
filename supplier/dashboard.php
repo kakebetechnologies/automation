@@ -1,3 +1,7 @@
+<?php
+require_once __DIR__ . '/../api/lib/page_guard.php';
+guardPage('supplier');
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>

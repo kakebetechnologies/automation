@@ -11,7 +11,9 @@ function initShell() {
   if (logoutBtn && typeof icon === "function") {
     logoutBtn.innerHTML = icon("logout") + `<span class="label">Logout</span>`;
     logoutBtn.addEventListener("click", (e) => {
-      if (!confirm("Log out of Falcon ERP?")) e.preventDefault();
+      e.preventDefault();
+      if (!confirm("Log out of Falcon ERP?")) return;
+      apiLogout().finally(() => { window.location.href = logoutBtn.getAttribute("href"); });
     });
   }
 
@@ -73,6 +75,20 @@ function initShell() {
   }
 }
 
+// Loads the authenticated session identity for this dashboard. The server
+// already gates the page itself (dashboard.php redirects unauthenticated/
+// wrong-role visitors before any HTML is sent) — this just fetches the
+// identity data dashboards need to render (name, initials, company, etc.)
+// and is a client-side safety net in case a session expires mid-visit.
+async function requireSessionUser(expectedRole) {
+  const user = await apiSession();
+  if (!user || user.role !== expectedRole) {
+    window.location.href = "../index.html";
+    return null;
+  }
+  return user;
+}
+
 function openModal(id) {
   document.getElementById(id)?.classList.add("open");
 }
@@ -101,16 +117,14 @@ function toast(message, tone = "success") {
 }
 
 /* =========================================================
-   Notification merging — combines each dashboard's static demo
-   notifications with live entries written by the shared store
-   (e.g. approvals, payments, trip checkpoints).
+   Notifications — fetched from the backend, already scoped to the
+   logged-in user's role + entity (no client-side audience filtering needed).
    ========================================================= */
-function mergeStoreNotifications(audience, staticList) {
-  if (typeof listNotifications !== "function") return staticList;
-  const fromStore = listNotifications(audience).slice(0, 8).map(n => ({
+async function loadFormattedNotifications(limit = 8) {
+  const notifications = await listNotifications(limit);
+  return notifications.map(n => ({
     icon: "activity", color: "blue", text: `${n.subject} — ${n.body}`, time: timeAgo(n.timestamp),
   }));
-  return [...fromStore, ...staticList];
 }
 function timeAgo(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();

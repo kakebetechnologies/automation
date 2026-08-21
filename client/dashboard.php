@@ -1,3 +1,7 @@
+<?php
+require_once __DIR__ . '/../api/lib/page_guard.php';
+guardPage('client');
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -118,13 +122,14 @@
             <h3 style="font-size:14px; margin-bottom:14px;">Upload Payment Receipt</h3>
             <div class="field"><label>Order</label><select id="paymentOrderSelect"></select></div>
             <div class="field"><label>Amount Paid (USD)</label><input type="number" placeholder="0.00" id="paymentAmount"></div>
-            <div class="field"><label>Payment Method</label><select><option>Bank Transfer</option><option>Mobile Money</option></select></div>
+            <div class="field"><label>Payment Method</label><select id="paymentMethodSelect"><option>Bank Transfer</option><option>Mobile Money</option></select></div>
             <div class="field">
               <label>Receipt</label>
-              <div class="doc-chip" style="border-style:dashed; cursor:pointer;">
+              <label class="doc-chip" style="border-style:dashed; cursor:pointer;" for="paymentReceiptFile">
                 <div class="doc-icon" id="uploadIcon"></div>
-                <div class="doc-info"><strong>Click to upload</strong><span>PDF, JPG or PNG — max 5MB</span></div>
-              </div>
+                <div class="doc-info"><strong id="receiptFileLabel">Click to upload</strong><span>PDF, JPG or PNG — max 5MB</span></div>
+              </label>
+              <input type="file" id="paymentReceiptFile" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style="display:none;">
             </div>
             <button class="btn btn-primary btn-block" id="submitPaymentBtn">Submit Receipt</button>
           </div>

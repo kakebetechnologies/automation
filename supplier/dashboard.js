@@ -1,12 +1,12 @@
 /* =========================================================
    Supplier Dashboard — render + interactions
-   Backed by the shared store (store.js) so purchase orders
-   placed by the Merchant, and invoices this supplier issues,
-   are genuinely shared across dashboards.
+   Talks to the real backend — purchase orders placed by the
+   Merchant, and invoices this supplier issues, are genuinely
+   shared across dashboards via MySQL.
    ========================================================= */
 
-const user = CURRENT_USER.supplier;
-const SUPPLIER_NAME = "Sky Water (U) Ltd";
+let user = null; // session identity, loaded on DOMContentLoaded
+let SUPPLIER_NAME = "";
 let pendingReadyPO = null;
 
 const NAV_META = {
@@ -24,18 +24,18 @@ const PAGE_SUB = {
   invoices: "Every invoice you've issued to Falcon Beverages (U) Ltd.",
 };
 
-function myPOs() { return listPurchaseOrders(SUPPLIER_NAME); }
-function poRequest(po) { return getClientRequest(po.requestId); }
+async function myPOs() { return listPurchaseOrders(user.supplier.id); }
 
-function renderChrome() {
+async function renderChrome() {
   document.getElementById("sideAvatar").textContent = user.initials;
-  document.getElementById("sideName").textContent = user.name;
-  document.getElementById("sideRole").textContent = user.role;
+  document.getElementById("sideName").textContent = user.full_name;
+  document.getElementById("sideRole").textContent = "Supplier Partner";
   document.getElementById("topAvatar").textContent = user.initials;
-  document.getElementById("topName").textContent = user.name;
-  document.getElementById("topRole").textContent = user.role;
+  document.getElementById("topName").textContent = user.full_name;
+  document.getElementById("topRole").textContent = "Supplier Partner";
 
-  const pendingCount = myPOs().filter(p => p.status === "Ordered").length;
+  const pos = await myPOs();
+  const pendingCount = pos.filter(p => p.status === "Ordered").length;
   NAV_META.fulfillment.badge = pendingCount || null;
 
   document.querySelectorAll(".nav-item[data-view]").forEach(item => {
@@ -48,26 +48,24 @@ function renderChrome() {
   document.querySelector(".search-box").insertAdjacentHTML("afterbegin", icon("search"));
   document.querySelector("[data-action='toggle-dropdown']").innerHTML = icon("bell") + '<span class="dot"></span>';
   document.getElementById("addProductBtn").innerHTML = icon("plus") + " Add Product";
+
+  return pos;
 }
 
-function renderNotifications() {
-  const staticNotifs = [
-    { icon: "boxes", color: "violet", text: "Welcome to your Supplier Portal", time: "This week" },
-  ];
-  const merged = mergeStoreNotifications(`supplier:${SUPPLIER_NAME}`, staticNotifs);
+async function renderNotifications() {
+  const merged = await loadFormattedNotifications();
   document.getElementById("notifList").innerHTML = merged.map(n => `
     <div class="doc-chip" style="border:none; border-bottom:1px solid var(--border); border-radius:0; background:none;">
       <div class="doc-icon kpi-icon ${n.color}" style="width:34px;height:34px;">${icon(n.icon)}</div>
       <div class="doc-info"><strong style="font-weight:600; white-space:normal;">${n.text}</strong><span>${n.time}</span></div>
-    </div>`).join("");
+    </div>`).join("") || `<div class="empty-state" style="padding:20px;">No notifications yet</div>`;
 }
 
-function renderKPIs() {
-  const pos = myPOs();
+function renderKPIs(pos) {
   const received = pos.length;
   const pendingCount = pos.filter(p => p.status === "Ordered").length;
   const readyCount = pos.filter(p => p.status === "Prepared").length;
-  const completedCount = pos.filter(p => { const r = poRequest(p); return r && r.status === "Delivered"; }).length;
+  const completedCount = pos.filter(p => p.requestStatus === "Delivered").length;
 
   const kpis = [
     { icon: "orders", cls: "blue", label: "Purchase Orders Received", value: received },
@@ -84,19 +82,19 @@ function renderKPIs() {
 }
 
 /* ---------- My Products ---------- */
-function renderProducts() {
-  const products = listSupplierProducts(SUPPLIER_NAME);
+async function renderProducts() {
+  const products = await listSupplierProducts(user.supplier.id);
   document.getElementById("productGrid").innerHTML = products.map(p => `
     <div class="panel card-pad">
       <div class="flex items-center justify-between" style="margin-bottom:14px;">
         <div class="kpi-icon teal">${icon("droplets")}</div>
-        <span class="badge badge-info">${p.type}</span>
+        <span class="badge badge-info">${p.type || ""}</span>
       </div>
       <h3 style="font-size:15px;">${p.name}</h3>
-      <p class="cell-muted mt-8">${p.pack}</p>
+      <p class="cell-muted mt-8">${p.pack || ""}</p>
       <div class="divider"></div>
       <div class="flex justify-between"><span class="cell-muted">Price (USD)</span><strong>$${p.priceUSD.toFixed(2)}</strong></div>
-      <div class="flex justify-between mt-8"><span class="cell-muted">Price (UGX)</span><strong>UGX ${p.priceUGX.toLocaleString()}</strong></div>
+      <div class="flex justify-between mt-8"><span class="cell-muted">Price (UGX)</span><strong>UGX ${(p.priceUGX || 0).toLocaleString()}</strong></div>
       <div class="flex justify-between mt-8"><span class="cell-muted">Stock</span><strong>${p.stock.toLocaleString()} units</strong></div>
       <div class="flex gap-8 mt-16">
         <button class="btn btn-secondary btn-sm w-full" data-edit="${p.id}">${icon("edit","icon")} Edit</button>
@@ -110,26 +108,28 @@ function renderProducts() {
       <div class="progress-bar"><span style="width:${Math.min(100, (p.stock/25000*100)).toFixed(0)}%"></span></div>
     </div>`).join("");
 
-  document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => openProductModal(btn.dataset.edit)));
-  document.querySelectorAll("[data-delete]").forEach(btn => btn.addEventListener("click", () => {
-    if (confirm("Remove this product from your catalog?")) { deleteSupplierProduct(btn.dataset.delete); renderProducts(); toast("Product removed."); }
+  document.querySelectorAll("[data-edit]").forEach(btn => btn.addEventListener("click", () => openProductModal(products.find(x => x.id === btn.dataset.edit))));
+  document.querySelectorAll("[data-delete]").forEach(btn => btn.addEventListener("click", async () => {
+    if (!confirm("Remove this product from your catalog?")) return;
+    await deleteSupplierProduct(btn.dataset.delete);
+    renderProducts();
+    toast("Product removed.");
   }));
 }
 
-function openProductModal(id) {
-  const p = id ? listSupplierProducts(SUPPLIER_NAME).find(x => x.id === id) : null;
+function openProductModal(p) {
   document.getElementById("productModalTitle").textContent = p ? "Edit Product" : "Add Product";
   document.getElementById("productEditId").value = p ? p.id : "";
   document.getElementById("productName").value = p ? p.name : "";
   document.getElementById("productType").value = p ? p.type : "Bottled Water";
-  document.getElementById("productPack").value = p ? p.pack : "";
+  document.getElementById("productPack").value = p ? (p.pack || "") : "";
   document.getElementById("productPriceUSD").value = p ? p.priceUSD : "";
-  document.getElementById("productPriceUGX").value = p ? p.priceUGX : "";
+  document.getElementById("productPriceUGX").value = p ? (p.priceUGX || "") : "";
   document.getElementById("productStock").value = p ? p.stock : "";
   openModal("modalProduct");
 }
 
-function saveProductFromModal() {
+async function saveProductFromModal() {
   const id = document.getElementById("productEditId").value;
   const data = {
     name: document.getElementById("productName").value.trim(),
@@ -140,8 +140,8 @@ function saveProductFromModal() {
     stock: parseInt(document.getElementById("productStock").value) || 0,
   };
   if (!data.name) { toast("Please enter a product name.", "error"); return; }
-  if (id) updateSupplierProduct(id, data);
-  else createSupplierProduct(SUPPLIER_NAME, data);
+  if (id) await updateSupplierProduct(id, data);
+  else await createSupplierProduct(data);
   closeModal("modalProduct");
   renderProducts();
   toast(id ? "Product updated." : "Product added to your catalog.");
@@ -149,22 +149,20 @@ function saveProductFromModal() {
 
 /* ---------- Fulfillment (purchase orders) ---------- */
 function fulfillRow(po, withAction) {
-  const req = poRequest(po);
   return `
     <tr>
       <td><span class="cell-strong">${po.id}</span><br><span class="cell-muted">${po.createdDate}</span></td>
-      <td class="cell-flex"><div class="mini-avatar">${initials(MERCHANT_COMPANY)}</div><div><div class="cell-strong">${MERCHANT_COMPANY}</div><div class="cell-muted">For ${req ? req.client : "restock"}</div></div></td>
+      <td class="cell-flex"><div class="mini-avatar">${initials(MERCHANT_COMPANY)}</div><div><div class="cell-strong">${MERCHANT_COMPANY}</div><div class="cell-muted">For ${po.client || "restock"}</div></div></td>
       <td>${po.product}<br><span class="cell-muted">${po.qty.toLocaleString()} units</span></td>
       <td><span class="badge ${po.status === "Prepared" ? "badge-success" : "badge-warning"}">${po.status}</span></td>
       ${withAction ? `<td style="text-align:right;">
         <button class="btn btn-secondary btn-sm" data-view-invoice="${po.invoiceId}">${icon("eye","icon")} Invoice</button>
-        ${po.status === "Ordered" ? `<button class="btn btn-success btn-sm mark-ready-btn" data-po="${po.id}">${icon("check","icon")} Mark Ready</button>` : ""}
+        ${po.status === "Ordered" ? `<button class="btn btn-success btn-sm mark-ready-btn" data-po="${po.id}" data-product="${po.product}" data-qty="${po.qty}">${icon("check","icon")} Mark Ready</button>` : ""}
       </td>` : ""}
     </tr>`;
 }
 
-function renderFulfillment() {
-  const pos = myPOs();
+function renderFulfillment(pos) {
   const head = `<thead><tr><th>PO</th><th>Ordered By</th><th>Product</th><th>Status</th><th></th></tr></thead>`;
   document.getElementById("fulfillTablePreview").innerHTML = head + `<tbody>${pos.slice(0, 4).map(p => fulfillRow(p, true)).join("") || `<tr><td colspan="5"><div class="empty-state">No purchase orders yet</div></td></tr>`}</tbody>`;
   document.getElementById("fulfillTable").innerHTML = head + `<tbody>${pos.map(p => fulfillRow(p, true)).join("") || `<tr><td colspan="5"><div class="empty-state">No purchase orders yet</div></td></tr>`}</tbody>`;
@@ -172,8 +170,7 @@ function renderFulfillment() {
   document.querySelectorAll(".mark-ready-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       pendingReadyPO = btn.dataset.po;
-      const po = myPOs().find(p => p.id === pendingReadyPO);
-      document.getElementById("markReadyOrderLabel").innerHTML = `<strong>${po.id}</strong> — ${po.product} &middot; ${po.qty.toLocaleString()} units`;
+      document.getElementById("markReadyOrderLabel").innerHTML = `<strong>${btn.dataset.po}</strong> — ${btn.dataset.product} &middot; ${parseInt(btn.dataset.qty).toLocaleString()} units`;
       document.getElementById("batchInput").value = `BT-2026-0${Math.floor(Math.random()*90+10)}`;
       openModal("modalMarkReady");
     });
@@ -184,17 +181,17 @@ function renderFulfillment() {
 }
 
 /* ---------- Deliveries ---------- */
-function renderDeliveries() {
-  const rows = myPOs().map(po => ({ po, req: poRequest(po) })).filter(x => x.req && !["Ordered"].includes(x.po.status));
+function renderDeliveries(pos) {
+  const rows = pos.filter(po => po.requestId && po.status !== "Ordered" && po.requestStatus);
   document.getElementById("deliveriesTable").innerHTML = `
     <thead><tr><th>PO</th><th>Client</th><th>Destination</th><th>Driver</th><th>Status</th></tr></thead>
-    <tbody>${rows.map(({ po, req }) => `
+    <tbody>${rows.map(po => `
       <tr>
         <td class="cell-strong">${po.id}</td>
-        <td>${req.client}</td>
-        <td>${req.destination}</td>
-        <td>${req.driver || "-"}</td>
-        <td>${statusBadge2(req.status)}</td>
+        <td>${po.client}</td>
+        <td>${po.destination}</td>
+        <td>${po.driver || "-"}</td>
+        <td>${statusBadge2(po.requestStatus)}</td>
       </tr>`).join("") || `<tr><td colspan="5"><div class="empty-state">Nothing in transit right now</div></td></tr>`}</tbody>`;
 }
 
@@ -207,25 +204,25 @@ function statusBadge2(status) {
 }
 
 /* ---------- Invoices ---------- */
-function renderInvoices() {
-  const invs = listSupplierInvoices(SUPPLIER_NAME);
+async function renderInvoices(pos) {
+  const invs = pos.filter(po => po.invoiceId);
   document.getElementById("invoicesTable").innerHTML = `
     <thead><tr><th>Invoice</th><th>Billed To</th><th>Product</th><th>Total</th><th>Issued</th><th></th></tr></thead>
-    <tbody>${invs.map(inv => `
+    <tbody>${invs.map(po => `
       <tr>
-        <td class="cell-strong">${inv.id}</td>
-        <td>${inv.billedTo}</td>
-        <td>${inv.product}<br><span class="cell-muted">${inv.qty.toLocaleString()} units</span></td>
-        <td class="cell-strong">${fmtMoney(inv.total)}</td>
-        <td class="cell-muted">${inv.issuedDate}</td>
-        <td style="text-align:right;"><button class="icon-btn btn-sm" data-view-invoice="${inv.id}">${icon("eye")}</button></td>
+        <td class="cell-strong">${po.invoiceId}</td>
+        <td>${MERCHANT_COMPANY}</td>
+        <td>${po.product}<br><span class="cell-muted">${po.qty.toLocaleString()} units</span></td>
+        <td class="cell-strong">${fmtMoney(po.total)}</td>
+        <td class="cell-muted">${po.createdDate}</td>
+        <td style="text-align:right;"><button class="icon-btn btn-sm" data-view-invoice="${po.invoiceId}">${icon("eye")}</button></td>
       </tr>`).join("") || `<tr><td colspan="6"><div class="empty-state">No invoices issued yet</div></td></tr>`}</tbody>`;
 
   document.querySelectorAll("#invoicesTable [data-view-invoice]").forEach(btn => btn.addEventListener("click", () => viewSupplierInvoice(btn.dataset.viewInvoice)));
 }
 
-function viewSupplierInvoice(invId) {
-  const inv = getSupplierInvoice(invId);
+async function viewSupplierInvoice(invId) {
+  const inv = await getSupplierInvoice(invId).catch(() => null);
   if (!inv) { toast("Invoice not found.", "error"); return; }
   const html = docPreviewHTML({
     title: "Supplier Invoice",
@@ -236,7 +233,7 @@ function viewSupplierInvoice(invId) {
       { label: "Billed To", value: inv.billedTo },
       { label: "Issued", value: inv.issuedDate },
       { label: "Supplier", value: inv.supplier },
-      { label: "Related Request", value: inv.requestId },
+      { label: "Related Request", value: inv.requestId || "-" },
     ],
     tableRows: {
       head: ["Description", "Qty (units)", "Unit Price", "Total"],
@@ -262,26 +259,30 @@ function initNav() {
   document.querySelectorAll("[data-nav]").forEach(item => item.addEventListener("click", (e) => { e.preventDefault(); switchView(item.dataset.nav); }));
 }
 
-function renderAll() {
-  renderChrome();
+async function renderAll() {
+  const pos = await renderChrome();
   renderNotifications();
-  renderKPIs();
+  renderKPIs(pos);
   renderProducts();
-  renderFulfillment();
-  renderDeliveries();
-  renderInvoices();
+  renderFulfillment(pos);
+  renderDeliveries(pos);
+  renderInvoices(pos);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  renderAll();
+document.addEventListener("DOMContentLoaded", async () => {
+  user = await requireSessionUser("supplier");
+  if (!user) return;
+  SUPPLIER_NAME = user.supplier.name;
+
+  await renderAll();
   initNav();
 
   document.getElementById("addProductBtn").addEventListener("click", () => openProductModal(null));
   document.getElementById("saveProductBtn").addEventListener("click", saveProductFromModal);
 
-  document.getElementById("confirmReadyBtn").addEventListener("click", () => {
+  document.getElementById("confirmReadyBtn").addEventListener("click", async () => {
     const batch = document.getElementById("batchInput").value.trim();
-    markPurchaseOrderPrepared(pendingReadyPO, batch);
+    await markPurchaseOrderPrepared(pendingReadyPO, batch);
     closeModal("modalMarkReady");
     renderAll();
     toast(`${pendingReadyPO} marked ready for pickup. Merchant notified.`);

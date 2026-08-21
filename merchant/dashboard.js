@@ -2,13 +2,13 @@
    Merchant Dashboard — render + interactions
    ========================================================= */
 
-const user = CURRENT_USER.merchant;
+let user = null; // session identity, loaded on DOMContentLoaded
 
 const NAV_META = {
   overview: { icon: "dashboard", label: "Overview" },
   clientrequests: { icon: "inbox", label: "Client Requests", badge: null },
   supplierorders: { icon: "boxes", label: "Supplier Orders" },
-  orders: { icon: "orders", label: "All Orders", badge: ORDERS.filter(o => !["Delivered","Cancelled"].includes(o.status)).length },
+  orders: { icon: "orders", label: "All Orders", badge: null },
   products: { icon: "products", label: "Products" },
   clients: { icon: "clients", label: "Clients" },
   drivers: { icon: "drivers", label: "Drivers & Fleet" },
@@ -20,7 +20,7 @@ const PAGE_SUB = {
   overview: "Welcome back — here's what's happening across your export business today.",
   clientrequests: "Product requests from clients — approve, confirm payment, source & dispatch.",
   supplierorders: "Browse every supplier's catalog and place a purchase order.",
-  orders: "Every purchase order across all clients and countries.",
+  orders: "Every request across all clients and countries.",
   products: "Manage water sizes, packaging and pricing.",
   clients: "Buyers importing Sky Water into South Sudan, DRC & Kenya.",
   drivers: "Assign trips and track compliance documents.",
@@ -35,18 +35,26 @@ const REQUEST_STATUS_BADGE = {
   "Ready for Dispatch": "badge-violet", "Assigned": "badge-info", "Picked Up": "badge-info",
   "In Transit": "badge-info", "Border Crossed": "badge-info", "Delivered": "badge-success",
 };
+const STATUS_PROGRESS = {
+  "Pending Approval": 5, "Rejected": 0, "Awaiting Payment": 15, "Payment Submitted": 25, "Paid": 35,
+  "Sourcing": 50, "Ready for Dispatch": 60, "Assigned": 70, "Picked Up": 80, "In Transit": 85,
+  "Border Crossed": 92, "Delivered": 100,
+};
 function reqBadge(status) { return `<span class="badge ${REQUEST_STATUS_BADGE[status] || "badge-neutral"}">${status}</span>`; }
+function countryFromDestination(dest) { return (dest || "").split(",").pop().trim() || dest; }
 
-function renderChrome() {
-  const pendingReqCount = listClientRequests().filter(r => r.status === "Pending Approval" || r.status === "Payment Submitted").length;
+async function renderChrome() {
+  const requests = await listClientRequests();
+  const pendingReqCount = requests.filter(r => r.status === "Pending Approval" || r.status === "Payment Submitted").length;
   NAV_META.clientrequests.badge = pendingReqCount || null;
+  NAV_META.orders.badge = requests.filter(r => !["Delivered", "Rejected"].includes(r.status)).length || null;
 
   document.getElementById("sideAvatar").textContent = user.initials;
-  document.getElementById("sideName").textContent = user.name;
-  document.getElementById("sideRole").textContent = user.role;
+  document.getElementById("sideName").textContent = user.full_name;
+  document.getElementById("sideRole").textContent = "Merchant / System Owner";
   document.getElementById("topAvatar").textContent = user.initials;
-  document.getElementById("topName").textContent = user.name;
-  document.getElementById("topRole").textContent = user.role;
+  document.getElementById("topName").textContent = user.full_name;
+  document.getElementById("topRole").textContent = "Merchant / System Owner";
 
   document.querySelectorAll(".nav-item[data-view]").forEach(item => {
     const meta = NAV_META[item.dataset.view];
@@ -69,28 +77,32 @@ function renderChrome() {
   qa[1].innerHTML = icon("plus") + " New Client";
   qa[2].innerHTML = icon("truck") + " Assign Driver";
   document.querySelector("[data-nav='reports']").innerHTML = icon("reports") + " View Reports";
+
+  return requests;
 }
 
-function renderNotifications() {
-  const merged = mergeStoreNotifications("merchant", NOTIFICATIONS);
+async function renderNotifications() {
+  const merged = await loadFormattedNotifications();
   document.getElementById("notifList").innerHTML = merged.map(n => `
     <div class="doc-chip" style="border:none; border-bottom:1px solid var(--border); border-radius:0; background:none;">
       <div class="doc-icon kpi-icon ${n.color}" style="width:34px;height:34px;">${icon(n.icon)}</div>
       <div class="doc-info"><strong style="font-weight:600; white-space:normal;">${n.text}</strong><span>${n.time}</span></div>
-    </div>`).join("");
+    </div>`).join("") || `<div class="empty-state" style="padding:20px;">No notifications yet</div>`;
 }
 
-function renderKPIs() {
-  const totalOrders = ORDERS.length;
-  const pendingPayment = ORDERS.filter(o => o.status === "Payment Pending" || o.status === "Awaiting Signature").length;
-  const inTransit = ORDERS.filter(o => ["In Transit", "Border Crossed"].includes(o.status)).length;
-  const revenueToday = ORDERS.reduce((s, o) => s + o.paid, 0);
+const REVENUE_STATUSES_EXCLUDED = ["Pending Approval", "Rejected", "Awaiting Payment", "Payment Submitted"];
+
+function renderKPIs(requests) {
+  const totalOrders = requests.length;
+  const pendingPayment = requests.filter(r => ["Awaiting Payment", "Payment Submitted"].includes(r.status)).length;
+  const inTransit = requests.filter(r => ["Picked Up", "In Transit", "Border Crossed"].includes(r.status)).length;
+  const revenueCollected = requests.filter(r => !REVENUE_STATUSES_EXCLUDED.includes(r.status)).reduce((s, r) => s + r.total, 0);
 
   const kpis = [
     { icon: "orders", cls: "blue", label: "Total Orders", value: totalOrders, trend: "+12% this month", up: true },
     { icon: "wallet", cls: "amber", label: "Pending Payment", value: pendingPayment, trend: "Needs follow-up", up: false },
     { icon: "truck", cls: "violet", label: "In Transit", value: inTransit, trend: "On schedule", up: true },
-    { icon: "reports", cls: "green", label: "Revenue Collected", value: fmtMoney(revenueToday), trend: "+8.4% vs last month", up: true },
+    { icon: "reports", cls: "green", label: "Revenue Collected", value: fmtMoney(revenueCollected), trend: "+8.4% vs last month", up: true },
   ];
   document.getElementById("kpiGrid").innerHTML = kpis.map(k => `
     <div class="kpi-card">
@@ -103,157 +115,203 @@ function renderKPIs() {
     </div>`).join("");
 }
 
-function orderRow(o) {
+function orderRow(r) {
   return `
-    <tr class="order-row" data-order="${o.id}" style="cursor:pointer;">
-      <td><span class="cell-strong">${o.id}</span><br><span class="cell-muted">${o.created}</span></td>
-      <td class="cell-flex"><div class="mini-avatar">${initials(o.client)}</div><div><div class="cell-strong">${o.client}</div><div class="cell-muted">${o.city}, ${o.country}</div></div></td>
-      <td>${o.product}<br><span class="cell-muted">${o.qty.toLocaleString()} bottles</span></td>
-      <td class="cell-strong">${fmtMoney(o.value)}<br><span class="cell-muted">${fmtMoney(o.paid)} paid</span></td>
-      <td>${statusBadge(o.status)}</td>
-      <td class="cell-muted">${o.driver}</td>
-      <td style="text-align:right;"><button class="icon-btn btn-sm view-order-btn" data-order="${o.id}">${icon("eye")}</button></td>
+    <tr class="order-row" data-req="${r.id}" style="cursor:pointer;">
+      <td><span class="cell-strong">${r.id}</span><br><span class="cell-muted">${r.createdDate}</span></td>
+      <td class="cell-flex"><div class="mini-avatar">${initials(r.client)}</div><div><div class="cell-strong">${r.client}</div><div class="cell-muted">${r.destination}</div></div></td>
+      <td>${r.product}<br><span class="cell-muted">${r.qty.toLocaleString()} units</span></td>
+      <td class="cell-strong">${fmtMoney(r.total)}</td>
+      <td>${reqBadge(r.status)}</td>
+      <td class="cell-muted">${r.driver || "-"}</td>
+      <td style="text-align:right;"><button class="icon-btn btn-sm view-order-btn" data-req="${r.id}">${icon("eye")}</button></td>
     </tr>`;
 }
 
-function renderOrders() {
-  const head = `<thead><tr><th>Order</th><th>Client</th><th>Product</th><th>Value</th><th>Status</th><th>Driver</th><th></th></tr></thead>`;
-  document.getElementById("recentOrdersTable").innerHTML = head + `<tbody>${ORDERS.slice(0, 5).map(orderRow).join("")}</tbody>`;
-  document.getElementById("allOrdersTable").innerHTML = head + `<tbody>${ORDERS.map(orderRow).join("")}</tbody>`;
+function renderOrders(requests) {
+  const head = `<thead><tr><th>Request</th><th>Client</th><th>Product</th><th>Total</th><th>Status</th><th>Driver</th><th></th></tr></thead>`;
+  const sorted = [...requests].reverse();
+  document.getElementById("recentOrdersTable").innerHTML = head + `<tbody>${sorted.slice(0, 5).map(orderRow).join("")}</tbody>`;
+  document.getElementById("allOrdersTable").innerHTML = head + `<tbody>${sorted.map(orderRow).join("") || `<tr><td colspan="7"><div class="empty-state">No orders yet</div></td></tr>`}</tbody>`;
 
   document.querySelectorAll(".order-row, .view-order-btn").forEach(el => {
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      openOrderDetail(el.dataset.order || el.closest(".order-row").dataset.order);
+      openRequestDetail(el.dataset.req || el.closest(".order-row").dataset.req);
     });
   });
 }
 
-function openOrderDetail(id) {
-  const o = ORDERS.find(x => x.id === id);
-  if (!o) return;
-  document.getElementById("orderDetailTitle").textContent = `${o.id} — ${o.client}`;
-  document.getElementById("orderDetailBody").innerHTML = `
-    <div class="grid-2" style="grid-template-columns: 1fr 1fr; margin-bottom:18px;">
-      <div><p class="cell-muted">Destination</p><p class="cell-strong">${o.city}, ${o.country}</p></div>
-      <div><p class="cell-muted">Status</p>${statusBadge(o.status)}</div>
-      <div><p class="cell-muted">Product</p><p class="cell-strong">${o.product} · ${o.qty.toLocaleString()} bottles</p></div>
-      <div><p class="cell-muted">Order Value</p><p class="cell-strong">${fmtMoney(o.value)}</p></div>
-      <div><p class="cell-muted">Amount Paid</p><p class="cell-strong">${fmtMoney(o.paid)}</p></div>
-      <div><p class="cell-muted">Assigned Driver</p><p class="cell-strong">${o.driver}</p></div>
-    </div>
-    <div class="field"><label>Delivery Progress</label>
-      <div class="progress-bar"><span style="width:${o.progress}%"></span></div>
-    </div>
-    <div class="doc-list mt-16">
-      ${(DOCS_BY_ORDER[o.id] || ["Sales Contract", "Commercial Invoice", "Certificate of Origin", "UNBS Certificate", "Export Declaration", "VAT Certificate"]).map(d => `
-        <div class="doc-chip">
-          <div class="doc-icon">${icon("pdf")}</div>
-          <div class="doc-info"><strong>${d}</strong><span>${o.id}.pdf</span></div>
-          <a class="doc-action" href="#">${icon("download")}</a>
-        </div>`).join("")}
-    </div>`;
-  openModal("modalOrderDetail");
-}
-
-function renderActivity() {
-  const colorMap = { green: "var(--success-500)", blue: "var(--brand-600)", violet: "var(--violet-500)", amber: "var(--warning-500)" };
-  document.getElementById("activityTimeline").innerHTML = NOTIFICATIONS.map(n => `
+async function renderActivity() {
+  const items = await loadFormattedNotifications(6);
+  const colorMap = { blue: "var(--brand-600)" };
+  document.getElementById("activityTimeline").innerHTML = items.map(n => `
     <div class="timeline-item">
-      <div class="timeline-dot" style="background:${colorMap[n.color]}22; color:${colorMap[n.color]};">${icon(n.icon)}</div>
+      <div class="timeline-dot" style="background:${colorMap.blue}22; color:${colorMap.blue};">${icon(n.icon)}</div>
       <div class="timeline-content"><strong>${n.text}</strong><time>${n.time}</time></div>
-    </div>`).join("");
+    </div>`).join("") || `<div class="empty-state">No recent activity</div>`;
 }
 
-function renderStatusBreakdown() {
+function renderStatusBreakdown(requests) {
   const counts = {};
-  ORDERS.forEach(o => counts[o.status] = (counts[o.status] || 0) + 1);
-  const total = ORDERS.length;
-  const colors = { "In Transit": "var(--brand-500)", "Border Crossed": "var(--info-500)", "Payment Pending": "var(--warning-500)", "Preparing Goods": "var(--violet-500)", "Ready for Dispatch": "var(--violet-600)", "Delivered": "var(--success-500)", "Awaiting Signature": "var(--warning-600)" };
+  requests.forEach(r => counts[r.status] = (counts[r.status] || 0) + 1);
+  const total = requests.length || 1;
   document.getElementById("statusBreakdown").innerHTML = Object.entries(counts).map(([status, count]) => `
     <div style="margin-bottom:12px;">
       <div class="flex justify-between" style="font-size:12px; margin-bottom:5px;"><span>${status}</span><strong>${count}</strong></div>
-      <div class="progress-bar"><span style="width:${(count/total*100).toFixed(0)}%; background:${colors[status] || "var(--gray-400)"}"></span></div>
+      <div class="progress-bar"><span style="width:${(count/total*100).toFixed(0)}%"></span></div>
     </div>`).join("");
 }
 
-function renderTopClients() {
-  const top = [...CLIENTS].sort((a,b) => b.totalValue - a.totalValue).slice(0, 4);
+function renderTopClients(clients) {
+  const top = [...clients].sort((a, b) => b.totalValue - a.totalValue).slice(0, 4);
   document.getElementById("topClients").innerHTML = top.map(c => `
     <div class="flex items-center justify-between" style="padding:8px 0; border-bottom:1px solid var(--border);">
       <div class="cell-flex"><div class="mini-avatar">${initials(c.name)}</div><div><div class="cell-strong" style="font-size:12.5px;">${c.name}</div><div class="cell-muted">${c.country}</div></div></div>
       <div class="cell-strong" style="font-size:12.5px;">${fmtMoney(c.totalValue)}</div>
-    </div>`).join("");
+    </div>`).join("") || `<div class="empty-state">No clients yet</div>`;
 }
 
-function renderProducts() {
-  document.getElementById("productGrid").innerHTML = PRODUCTS.map(p => `
+/* =========================================================
+   Products (real catalog — supplier_products across all suppliers)
+   ========================================================= */
+let editingProductId = null;
+
+async function renderProducts() {
+  const [products, suppliers] = await Promise.all([listSupplierProducts(), listSuppliers()]);
+  document.getElementById("productGrid").innerHTML = products.map(p => `
     <div class="panel card-pad">
       <div class="flex items-center justify-between mt-8" style="margin-bottom:14px;">
         <div class="kpi-icon blue">${icon("droplets")}</div>
-        <span class="badge badge-success">In Stock</span>
+        <span class="badge badge-neutral">${p.supplier}</span>
       </div>
       <h3 style="font-size:15px;">${p.name}</h3>
-      <p class="cell-muted mt-8">${p.pack}</p>
+      <p class="cell-muted mt-8">${p.pack || ""}</p>
       <div class="divider"></div>
       <div class="flex justify-between"><span class="cell-muted">Price (USD)</span><strong>$${p.priceUSD.toFixed(2)}</strong></div>
-      <div class="flex justify-between mt-8"><span class="cell-muted">Price (UGX)</span><strong>UGX ${p.priceUGX.toLocaleString()}</strong></div>
-      <div class="flex justify-between mt-8"><span class="cell-muted">Stock</span><strong>${p.stock.toLocaleString()} bottles</strong></div>
-      <div class="flex gap-8 mt-16"><button class="btn btn-secondary btn-sm w-full">${icon("edit")} Edit</button><button class="btn btn-ghost btn-sm">${icon("trash")}</button></div>
-    </div>`).join("");
+      <div class="flex justify-between mt-8"><span class="cell-muted">Price (UGX)</span><strong>UGX ${(p.priceUGX || 0).toLocaleString()}</strong></div>
+      <div class="flex justify-between mt-8"><span class="cell-muted">Stock</span><strong>${p.stock.toLocaleString()} units</strong></div>
+      <div class="flex gap-8 mt-16">
+        <button class="btn btn-secondary btn-sm w-full edit-product-btn" data-id="${p.id}">${icon("edit")} Edit</button>
+        <button class="btn btn-ghost btn-sm delete-product-btn" data-id="${p.id}">${icon("trash")}</button>
+      </div>
+    </div>`).join("") || `<div class="empty-state">No products yet</div>`;
+
+  document.getElementById("productSupplierSelect").innerHTML = suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
+
+  document.querySelectorAll(".edit-product-btn").forEach(btn => btn.addEventListener("click", () => {
+    const p = products.find(x => x.id === btn.dataset.id);
+    openProductModal(p);
+  }));
+  document.querySelectorAll(".delete-product-btn").forEach(btn => btn.addEventListener("click", async () => {
+    if (!confirm("Delete this product from the catalog?")) return;
+    await deleteSupplierProduct(btn.dataset.id);
+    toast("Product removed.");
+    renderProducts();
+  }));
 }
 
-function renderClients() {
+function openProductModal(product) {
+  editingProductId = product ? product.id : null;
+  document.getElementById("productModalTitle").textContent = product ? "Edit Product" : "Add New Product";
+  document.getElementById("productSupplierSelect").value = product ? String(product.supplierId) : document.getElementById("productSupplierSelect").value;
+  document.getElementById("productNameInput").value = product ? product.name : "";
+  document.getElementById("productPackInput").value = product ? (product.pack || "") : "";
+  document.getElementById("productStockInput").value = product ? product.stock : "";
+  document.getElementById("productPriceUsdInput").value = product ? product.priceUSD : "";
+  document.getElementById("productPriceUgxInput").value = product ? (product.priceUGX || "") : "";
+  openModal("modalProduct");
+}
+
+/* =========================================================
+   Clients
+   ========================================================= */
+async function renderClients() {
+  const clients = await listClients();
   document.getElementById("clientsTable").innerHTML = `
     <thead><tr><th>Client</th><th>Country</th><th>Contact</th><th>Orders</th><th>Total Value</th><th>Status</th><th></th></tr></thead>
-    <tbody>${CLIENTS.map(c => `
+    <tbody>${clients.map(c => `
       <tr>
         <td class="cell-flex"><div class="mini-avatar">${initials(c.name)}</div><span class="cell-strong">${c.name}</span></td>
-        <td>${c.country}</td>
-        <td>${c.contact}<br><span class="cell-muted">${c.email}</span></td>
+        <td>${c.country || "-"}</td>
+        <td>${c.contact || "-"}<br><span class="cell-muted">${c.email || ""}</span></td>
         <td class="cell-strong">${c.orders}</td>
         <td class="cell-strong">${fmtMoney(c.totalValue)}</td>
         <td><span class="badge ${c.status === "Active" ? "badge-success" : "badge-info"}">${c.status}</span></td>
-        <td style="text-align:right;"><button class="icon-btn btn-sm">${icon("eye")}</button></td>
-      </tr>`).join("")}</tbody>`;
+        <td style="text-align:right;"><button class="icon-btn btn-sm delete-client-btn" data-id="${c.id}">${icon("trash")}</button></td>
+      </tr>`).join("") || `<tr><td colspan="7"><div class="empty-state">No clients yet</div></td></tr>`}</tbody>`;
+
+  document.querySelectorAll(".delete-client-btn").forEach(btn => btn.addEventListener("click", async () => {
+    if (!confirm("Remove this client?")) return;
+    await deleteClient(btn.dataset.id);
+    toast("Client removed.");
+    renderClients();
+  }));
+
+  return clients;
 }
 
-function renderDrivers() {
-  document.getElementById("driverGrid").innerHTML = DRIVERS.map(d => `
+/* =========================================================
+   Drivers
+   ========================================================= */
+async function renderDrivers() {
+  const drivers = await listDrivers();
+  document.getElementById("driverGrid").innerHTML = drivers.map(d => `
     <div class="panel card-pad">
       <div class="cell-flex" style="margin-bottom:14px;">
         <div class="avatar" style="width:44px;height:44px;">${initials(d.name)}</div>
         <div><h3 style="font-size:14.5px;">${d.name}</h3><p class="cell-muted">${d.vehicle}</p></div>
       </div>
       <div class="flex justify-between"><span class="cell-muted">Status</span><span class="badge ${d.status === "On Trip" ? "badge-info" : "badge-success"}">${d.status}</span></div>
-      <div class="flex justify-between mt-8"><span class="cell-muted">Current Trip</span><strong>${d.trip}</strong></div>
-      <div class="flex justify-between mt-8"><span class="cell-muted">Phone</span><strong>${d.phone}</strong></div>
+      <div class="flex justify-between mt-8"><span class="cell-muted">Current Trip</span><strong>${d.trip || "-"}</strong></div>
+      <div class="flex justify-between mt-8"><span class="cell-muted">Phone</span><strong>${d.phone || "-"}</strong></div>
       <div class="flex justify-between mt-8"><span class="cell-muted">Documents</span>${d.docsComplete ? '<span class="badge badge-success">Complete</span>' : '<span class="badge badge-warning">Incomplete</span>'}</div>
-      <button class="btn btn-secondary btn-sm w-full mt-16">${icon("truck")} ${d.status === "Available" ? "Assign Trip" : "View Trip"}</button>
-    </div>`).join("");
+      <div class="flex gap-8 mt-16">
+        <button class="btn btn-secondary btn-sm w-full trip-btn" data-id="${d.id}" data-trip="${d.trip || ""}">${icon("truck")} ${d.status === "Available" ? "Assign Trip" : "View Trip"}</button>
+        <button class="btn btn-ghost btn-sm delete-driver-btn" data-id="${d.id}">${icon("trash")}</button>
+      </div>
+    </div>`).join("") || `<div class="empty-state">No drivers yet</div>`;
+
+  document.querySelectorAll(".trip-btn").forEach(btn => btn.addEventListener("click", () => {
+    if (btn.dataset.trip) { openRequestDetail(btn.dataset.trip); }
+    else { switchView("clientrequests"); toast("Pick a request that's Ready for Dispatch to assign this driver.", "info"); }
+  }));
+  document.querySelectorAll(".delete-driver-btn").forEach(btn => btn.addEventListener("click", async () => {
+    if (!confirm("Remove this driver?")) return;
+    await deleteDriver(btn.dataset.id);
+    toast("Driver removed.");
+    renderDrivers();
+  }));
+
+  return drivers;
 }
 
-function renderDocuments() {
+/* =========================================================
+   Documents (order picker; the document chips stay decorative —
+   real per-order customs/export docs are a future phase)
+   ========================================================= */
+async function renderDocuments(requests) {
   const select = document.getElementById("docOrderSelect");
-  select.innerHTML = ORDERS.map(o => `<option value="${o.id}">${o.id} — ${o.client}</option>`).join("");
+  select.innerHTML = requests.map(r => `<option value="${r.id}">${r.id} — ${r.client}</option>`).join("");
   const renderList = (id) => {
-    const o = ORDERS.find(x => x.id === id);
-    const docs = DOCS_BY_ORDER[id] || ["Sales Contract", "Commercial Invoice", "Certificate of Origin", "UNBS Certificate", "Export Declaration", "VAT Certificate"];
+    const r = requests.find(x => x.id === id);
+    if (!r) return;
+    const docs = ["Sales Contract", "Commercial Invoice", "Certificate of Origin", "UNBS Certificate", "Export Declaration", "VAT Certificate"];
     document.getElementById("docList").innerHTML = docs.map(d => `
       <div class="doc-chip">
         <div class="doc-icon">${icon("pdf")}</div>
-        <div class="doc-info"><strong>${d}</strong><span>${o.client} · ${id}.pdf · Generated ${o.created}</span></div>
+        <div class="doc-info"><strong>${d}</strong><span>${r.client} &middot; ${id} &middot; Generated ${r.createdDate}</span></div>
         <a class="doc-action" href="#" title="Download">${icon("download")}</a>
       </div>`).join("");
   };
-  select.addEventListener("change", () => renderList(select.value));
-  renderList(ORDERS[0].id);
+  select.onchange = () => renderList(select.value);
+  if (requests.length) renderList(requests[0].id);
 }
 
-function renderReports() {
+function renderReports(requests) {
   const byCountry = {};
-  ORDERS.forEach(o => byCountry[o.country] = (byCountry[o.country] || 0) + o.value);
-  const maxC = Math.max(...Object.values(byCountry));
+  requests.forEach(r => byCountry[countryFromDestination(r.destination)] = (byCountry[countryFromDestination(r.destination)] || 0) + r.total);
+  const maxC = Math.max(1, ...Object.values(byCountry));
   document.getElementById("revenueByCountry").innerHTML = Object.entries(byCountry).map(([c, v]) => `
     <div style="margin-bottom:12px;">
       <div class="flex justify-between" style="font-size:12px; margin-bottom:5px;"><span>${c}</span><strong>${fmtMoney(v)}</strong></div>
@@ -261,8 +319,8 @@ function renderReports() {
     </div>`).join("");
 
   const byProduct = {};
-  ORDERS.forEach(o => byProduct[o.product] = (byProduct[o.product] || 0) + o.qty);
-  const maxP = Math.max(...Object.values(byProduct));
+  requests.forEach(r => byProduct[r.product] = (byProduct[r.product] || 0) + r.qty);
+  const maxP = Math.max(1, ...Object.values(byProduct));
   document.getElementById("productMix").innerHTML = Object.entries(byProduct).map(([p, q]) => `
     <div style="margin-bottom:12px;">
       <div class="flex justify-between" style="font-size:12px; margin-bottom:5px;"><span>${p}</span><strong>${q.toLocaleString()}</strong></div>
@@ -275,8 +333,8 @@ function renderReports() {
    ========================================================= */
 let activeRequestId = null;
 
-function renderClientRequests() {
-  const reqs = [...listClientRequests()].reverse();
+async function renderClientRequests() {
+  const reqs = [...(await listClientRequests())].reverse();
   document.getElementById("requestsTable").innerHTML = `
     <thead><tr><th>Request</th><th>Client</th><th>Product</th><th>Total</th><th>Status</th><th></th></tr></thead>
     <tbody>${reqs.map(r => `
@@ -313,10 +371,9 @@ function requestInvoiceHTML(req, inv) {
   });
 }
 
-function openRequestDetail(reqId) {
+async function openRequestDetail(reqId) {
   activeRequestId = reqId;
-  const req = getClientRequest(reqId);
-  const inv = getClientInvoice(reqId);
+  const req = await getClientRequest(reqId);
   document.getElementById("requestDetailTitle").textContent = `${req.id} — ${req.client}`;
 
   let extra = "";
@@ -327,6 +384,7 @@ function openRequestDetail(reqId) {
     extra += `<div class="panel card-pad" style="box-shadow:none; background:var(--surface-muted); margin-top:16px;">
       <p class="cell-muted">Payment Receipt</p>
       <p class="cell-strong">${req.receipt.method} &middot; ${fmtMoney(req.receipt.amount)} &middot; uploaded ${req.receipt.uploadedDate}</p>
+      ${req.receipt.fileId ? `<a class="btn btn-secondary btn-sm mt-8" href="../api/files/serve.php?id=${req.receipt.fileId}" target="_blank" rel="noopener">${icon("eye","icon")} View Receipt</a>` : ""}
     </div>`;
   }
   if (req.supplier) {
@@ -339,10 +397,10 @@ function openRequestDetail(reqId) {
   if (req.driver) {
     extra += `<div class="panel card-pad" style="box-shadow:none; background:var(--surface-muted); margin-top:16px;">
       <p class="cell-muted">Assigned Driver</p>
-      <p class="cell-strong">${req.driver}</p>
+      <p class="cell-strong">${req.driver} ${req.driverVehicle ? "&middot; " + req.driverVehicle : ""}</p>
     </div>`;
   }
-  const events = getTrackingEvents(reqId);
+  const events = req.trackingEvents || [];
   if (events.length) {
     extra += `<div class="panel card-pad" style="box-shadow:none; background:var(--surface-muted); margin-top:16px;">
       <p class="cell-muted" style="margin-bottom:10px;">Tracking Timeline</p>
@@ -363,10 +421,12 @@ function openRequestDetail(reqId) {
       <div><p class="cell-muted">Product</p><p class="cell-strong">${req.product} &middot; ${req.qty.toLocaleString()} units</p></div>
       <div><p class="cell-muted">Total</p><p class="cell-strong">${fmtMoney(req.total)}</p></div>
     </div>
+    <div class="field mt-16"><label>Progress</label><div class="progress-bar"><span style="width:${STATUS_PROGRESS[req.status] || 0}%"></span></div></div>
     <button class="btn btn-secondary btn-sm mt-16" id="viewClientInvBtn">${icon("eye","icon")} View Sales Invoice</button>
     ${extra}`;
 
-  document.getElementById("viewClientInvBtn").addEventListener("click", () => {
+  document.getElementById("viewClientInvBtn").addEventListener("click", async () => {
+    const inv = await getClientInvoice(reqId);
     openDocViewer("Sales Invoice", requestInvoiceHTML(req, inv), `${inv.id}-${req.client}`);
   });
   document.getElementById("viewSupplierInvBtn")?.addEventListener("click", () => viewMerchantSupplierInvoice(req.supplierInvoiceId));
@@ -392,21 +452,21 @@ function renderRequestFooter(req) {
   }
 
   footer.innerHTML = html;
-  document.getElementById("btnApprove")?.addEventListener("click", () => { approveRequest(req.id); refreshRequestUI(req.id); toast("Request approved. Client notified to make payment."); });
+  document.getElementById("btnApprove")?.addEventListener("click", async () => { await approveRequest(req.id); await refreshRequestUI(req.id); toast("Request approved. Client notified to make payment."); });
   document.getElementById("btnReject")?.addEventListener("click", () => { closeModal("modalRequestDetail"); document.getElementById("rejectReasonInput").value = ""; openModal("modalRejectRequest"); });
-  document.getElementById("btnConfirmPayment")?.addEventListener("click", () => { confirmPayment(req.id); refreshRequestUI(req.id); toast("Payment confirmed. Client notified — sourcing goods next."); });
+  document.getElementById("btnConfirmPayment")?.addEventListener("click", async () => { await confirmPayment(req.id); await refreshRequestUI(req.id); toast("Payment confirmed. Client notified — sourcing goods next."); });
   document.getElementById("btnSource")?.addEventListener("click", () => openSourceSupplierModal(req.id));
   document.getElementById("btnDispatchAssign")?.addEventListener("click", () => openAssignRequestDriverModal(req.id));
 }
 
-function refreshRequestUI(reqId) {
-  renderChrome();
-  renderClientRequests();
-  if (document.getElementById("modalRequestDetail").classList.contains("open")) openRequestDetail(reqId);
+async function refreshRequestUI(reqId) {
+  await renderChrome();
+  await renderClientRequests();
+  if (document.getElementById("modalRequestDetail").classList.contains("open")) await openRequestDetail(reqId);
 }
 
-function viewMerchantSupplierInvoice(invId) {
-  const inv = getSupplierInvoice(invId);
+async function viewMerchantSupplierInvoice(invId) {
+  const inv = await getSupplierInvoice(invId);
   const html = docPreviewHTML({
     title: "Supplier Invoice",
     subtitle: `Issued by ${inv.supplier} to ${inv.billedTo}`,
@@ -420,37 +480,44 @@ function viewMerchantSupplierInvoice(invId) {
   openDocViewer("Supplier Invoice", html, `${inv.id}-${inv.supplier}`);
 }
 
-function openSourceSupplierModal(reqId) {
-  const req = getClientRequest(reqId);
+async function openSourceSupplierModal(reqId) {
+  const req = await getClientRequest(reqId);
   document.getElementById("sourceRequestLabel").innerHTML = `<strong>${req.id}</strong> — ${req.product} &middot; ${req.qty.toLocaleString()} units for ${req.client}`;
-  const carriers = [...new Set(listSupplierProducts().filter(p => p.name === req.product).map(p => p.supplier))];
-  const options = carriers.length ? carriers : listAvailableSuppliers();
-  document.getElementById("sourceSupplierSelect").innerHTML = options.map(s => `<option>${s}</option>`).join("");
+  const allProducts = await listSupplierProducts();
+  const carriers = [...new Map(allProducts.filter(p => p.name === req.product).map(p => [p.supplierId, p.supplier])).entries()];
+  const suppliers = carriers.length ? carriers.map(([id, name]) => ({ id, name })) : await listSuppliers();
+  document.getElementById("sourceSupplierSelect").innerHTML = suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
   if (!carriers.length) toast("No supplier currently lists this exact product — showing all suppliers.", "info");
   closeModal("modalRequestDetail");
   openModal("modalSourceSupplier");
-  document.getElementById("confirmSourceBtn").onclick = () => {
-    const supplier = document.getElementById("sourceSupplierSelect").value;
-    sourceFromSupplier(reqId, supplier);
+  document.getElementById("confirmSourceBtn").onclick = async () => {
+    const supplierId = document.getElementById("sourceSupplierSelect").value;
+    const supplierName = document.getElementById("sourceSupplierSelect").selectedOptions[0].textContent;
+    await sourceFromSupplier(reqId, supplierId);
     closeModal("modalSourceSupplier");
-    toast(`Purchase order sent to ${supplier}.`);
+    toast(`Purchase order sent to ${supplierName}.`);
     openRequestDetail(reqId);
   };
 }
 
-function openAssignRequestDriverModal(reqId) {
-  const req = getClientRequest(reqId);
-  const dn = generateDispatchNote(reqId);
-  document.getElementById("assignRequestLabel").innerHTML = `<strong>${req.id}</strong> — ${req.product} &middot; ${req.qty.toLocaleString()} units. Dispatch note ${dn.id} generated.`;
+async function openAssignRequestDriverModal(reqId) {
+  const req = await getClientRequest(reqId);
+  const dnId = await generateDispatchNote(reqId);
+  const refreshed = await getClientRequest(reqId);
+  document.getElementById("assignRequestLabel").innerHTML = `<strong>${req.id}</strong> — ${req.product} &middot; ${req.qty.toLocaleString()} units. Dispatch note ${dnId} generated.`;
+  const dn = await getDispatchNoteDoc(dnId);
   document.getElementById("assignPickupLocation").value = dn.pickupLocation;
-  document.getElementById("assignRequestDriverSelect").innerHTML = DRIVERS.filter(d => d.status === "Available" && d.docsComplete).map(d => `<option>${d.name}</option>`).join("") || `<option>No available drivers</option>`;
+  const drivers = (await listDrivers()).filter(d => d.status === "Available" && d.docsComplete);
+  document.getElementById("assignRequestDriverSelect").innerHTML = drivers.map(d => `<option value="${d.id}">${d.name}</option>`).join("") || `<option value="">No available drivers</option>`;
   closeModal("modalRequestDetail");
   openModal("modalAssignRequestDriver");
-  document.getElementById("confirmAssignRequestBtn").onclick = () => {
-    const driver = document.getElementById("assignRequestDriverSelect").value;
-    assignDriverToRequest(reqId, driver);
+  document.getElementById("confirmAssignRequestBtn").onclick = async () => {
+    const select = document.getElementById("assignRequestDriverSelect");
+    if (!select.value) { toast("No available drivers to assign.", "error"); return; }
+    const driverName = select.selectedOptions[0].textContent;
+    await assignDriverToRequest(reqId, select.value);
     closeModal("modalAssignRequestDriver");
-    toast(`${driver} assigned — pickup details sent to their dashboard.`);
+    toast(`${driverName} assigned — pickup details sent to their dashboard.`);
     refreshRequestUI(reqId);
   };
 }
@@ -458,13 +525,13 @@ function openAssignRequestDriverModal(reqId) {
 /* =========================================================
    Supplier Orders — browse catalog, place purchase orders
    ========================================================= */
-function renderSupplierOrders() {
-  const products = listSupplierProducts();
+async function renderSupplierOrders() {
+  const products = await listSupplierProducts();
   document.getElementById("supplierCatalogGrid").innerHTML = products.map(p => `
     <div class="panel card-pad">
       <div class="flex items-center justify-between" style="margin-bottom:14px;">
         <div class="kpi-icon teal">${icon("droplets")}</div>
-        <span class="badge badge-neutral">${p.type}</span>
+        <span class="badge badge-neutral">${p.type || ""}</span>
       </div>
       <h3 style="font-size:14.5px;">${p.name}</h3>
       <p class="cell-muted mt-8">${p.supplier}</p>
@@ -474,9 +541,9 @@ function renderSupplierOrders() {
       <button class="btn btn-primary btn-sm w-full mt-16" data-order-product="${p.id}">${icon("plus","icon")} Order</button>
     </div>`).join("");
 
-  document.querySelectorAll("[data-order-product]").forEach(btn => btn.addEventListener("click", () => openPOModal(btn.dataset.orderProduct)));
+  document.querySelectorAll("[data-order-product]").forEach(btn => btn.addEventListener("click", () => openPOModal(btn.dataset.orderProduct, products)));
 
-  const pos = [...listPurchaseOrders()].reverse().slice(0, 6);
+  const pos = [...(await listPurchaseOrders())].reverse().slice(0, 6);
   document.getElementById("recentPOList").innerHTML = pos.map(po => `
     <div class="flex items-center justify-between" style="padding:8px 0; border-bottom:1px solid var(--border);">
       <div><div class="cell-strong" style="font-size:12.5px;">${po.id}</div><div class="cell-muted">${po.supplier} &middot; ${po.product}</div></div>
@@ -485,8 +552,8 @@ function renderSupplierOrders() {
 }
 
 let poProduct = null;
-function openPOModal(productId) {
-  poProduct = listSupplierProducts().find(p => p.id === productId);
+function openPOModal(productId, products) {
+  poProduct = products.find(p => p.id === productId);
   document.getElementById("poProductLabel").innerHTML = `<strong>${poProduct.name}</strong> from ${poProduct.supplier} &middot; $${poProduct.priceUSD.toFixed(2)} / unit`;
   document.getElementById("poQtyInput").value = 1000;
   updatePOEstimate();
@@ -497,9 +564,11 @@ function updatePOEstimate() {
   document.getElementById("poEstimate").textContent = fmtMoney(qty * poProduct.priceUSD);
 }
 
-function populateAssignModal() {
-  document.getElementById("assignOrderSelect").innerHTML = ORDERS.filter(o => o.driver === "-").map(o => `<option value="${o.id}">${o.id} — ${o.client}</option>`).join("") || `<option>No orders awaiting driver</option>`;
-  document.getElementById("assignDriverSelect").innerHTML = DRIVERS.filter(d => d.status === "Available" && d.docsComplete).map(d => `<option>${d.name}</option>`).join("") || `<option>No available drivers</option>`;
+async function populateAssignModal() {
+  const requests = (await listClientRequests()).filter(r => r.status === "Ready for Dispatch");
+  document.getElementById("assignOrderSelect").innerHTML = requests.map(r => `<option value="${r.id}">${r.id} — ${r.client}</option>`).join("") || `<option value="">No requests awaiting a driver</option>`;
+  const drivers = (await listDrivers()).filter(d => d.status === "Available" && d.docsComplete);
+  document.getElementById("assignDriverSelect").innerHTML = drivers.map(d => `<option value="${d.id}">${d.name}</option>`).join("") || `<option value="">No available drivers</option>`;
 }
 
 /* ---------- View switching ---------- */
@@ -523,45 +592,105 @@ function initNav() {
 }
 
 function initFormActions() {
-  document.getElementById("saveProductBtn").addEventListener("click", () => { closeModal("modalProduct"); toast("Product saved successfully."); });
-  document.getElementById("saveClientBtn").addEventListener("click", () => { closeModal("modalClient"); toast("Client added successfully."); });
-  document.getElementById("confirmAssignBtn").addEventListener("click", () => { closeModal("modalDriverAssign"); toast("Driver assigned. Notification sent to client and driver."); });
+  document.querySelector("[data-modal-open='modalProduct']")?.addEventListener("click", () => openProductModal(null));
+  document.getElementById("saveProductBtn").addEventListener("click", async () => {
+    const fields = {
+      supplierId: document.getElementById("productSupplierSelect").value,
+      name: document.getElementById("productNameInput").value.trim(),
+      pack: document.getElementById("productPackInput").value.trim(),
+      stock: document.getElementById("productStockInput").value || 0,
+      priceUSD: document.getElementById("productPriceUsdInput").value || 0,
+      priceUGX: document.getElementById("productPriceUgxInput").value || null,
+    };
+    if (!fields.name || !fields.priceUSD) { toast("Enter a product name and USD price.", "error"); return; }
+    if (editingProductId) await updateSupplierProduct(editingProductId, fields);
+    else await createSupplierProduct(fields);
+    closeModal("modalProduct");
+    toast(editingProductId ? "Product updated." : "Product added.");
+    renderProducts();
+  });
+
+  document.getElementById("saveClientBtn").addEventListener("click", async () => {
+    const name = document.getElementById("clientNameInput").value.trim();
+    if (!name) { toast("Enter a company name.", "error"); return; }
+    await createClient({
+      name,
+      country: document.getElementById("clientCountryInput").value,
+      contact: document.getElementById("clientContactInput").value.trim(),
+      email: document.getElementById("clientEmailInput").value.trim(),
+      phone: document.getElementById("clientPhoneInput").value.trim(),
+    });
+    closeModal("modalClient");
+    toast("Client added successfully.");
+    renderClients();
+  });
+
+  document.getElementById("saveDriverBtn").addEventListener("click", async () => {
+    const name = document.getElementById("driverNameInput").value.trim();
+    if (!name) { toast("Enter the driver's name.", "error"); return; }
+    await createDriver({
+      name,
+      phone: document.getElementById("driverPhoneInput").value.trim(),
+      vehiclePlate: document.getElementById("driverPlateInput").value.trim(),
+      vehicleModel: document.getElementById("driverModelInput").value.trim(),
+    });
+    closeModal("modalDriver");
+    toast("Driver added — 5 compliance documents are pending upload.");
+    renderDrivers();
+  });
+  document.getElementById("addDriverBtn").addEventListener("click", () => {
+    ["driverNameInput", "driverPhoneInput", "driverPlateInput", "driverModelInput"].forEach(id => document.getElementById(id).value = "");
+    openModal("modalDriver");
+  });
+
+  document.getElementById("confirmAssignBtn").addEventListener("click", async () => {
+    const reqSelect = document.getElementById("assignOrderSelect");
+    const driverSelect = document.getElementById("assignDriverSelect");
+    if (!reqSelect.value || !driverSelect.value) { toast("No matching request/driver to assign.", "error"); return; }
+    await generateDispatchNote(reqSelect.value);
+    await assignDriverToRequest(reqSelect.value, driverSelect.value);
+    closeModal("modalDriverAssign");
+    toast("Driver assigned. Notification sent to client and driver.");
+    renderChrome();
+  });
   document.querySelector("[data-modal-open='modalDriverAssign']")?.addEventListener("click", populateAssignModal);
   document.getElementById("exportOrdersBtn").addEventListener("click", () => toast("Orders exported to CSV.", "info"));
   document.getElementById("filterBtn").addEventListener("click", () => toast("Filter panel coming soon.", "info"));
 
-  document.getElementById("confirmRejectBtn").addEventListener("click", () => {
+  document.getElementById("confirmRejectBtn").addEventListener("click", async () => {
     const reason = document.getElementById("rejectReasonInput").value.trim();
-    rejectRequest(activeRequestId, reason);
+    await rejectRequest(activeRequestId, reason);
     closeModal("modalRejectRequest");
     refreshRequestUI(activeRequestId);
     toast("Request rejected. Client notified.");
   });
 
   document.getElementById("poQtyInput").addEventListener("input", updatePOEstimate);
-  document.getElementById("confirmPOBtn").addEventListener("click", () => {
+  document.getElementById("confirmPOBtn").addEventListener("click", async () => {
     const qty = parseInt(document.getElementById("poQtyInput").value) || 0;
     if (qty <= 0) { toast("Enter a valid quantity.", "error"); return; }
-    createPurchaseOrder(poProduct.supplier, poProduct.name, qty, poProduct.priceUSD, null);
+    await createPurchaseOrder(poProduct.supplierId, poProduct.idNum, qty);
     closeModal("modalOrderFromSupplier");
     renderSupplierOrders();
     toast(`Purchase order sent to ${poProduct.supplier}.`);
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  renderChrome();
+document.addEventListener("DOMContentLoaded", async () => {
+  user = await requireSessionUser("merchant");
+  if (!user) return;
+
+  const requests = await renderChrome();
   renderNotifications();
-  renderKPIs();
-  renderOrders();
+  renderKPIs(requests);
+  renderOrders(requests);
   renderActivity();
-  renderStatusBreakdown();
-  renderTopClients();
+  renderStatusBreakdown(requests);
+  renderClients().then(clients => renderTopClients(clients));
   renderProducts();
-  renderClients();
   renderDrivers();
-  renderDocuments();
-  renderReports();
+  renderDocuments(requests);
+  renderReports(requests);
   renderClientRequests();
   renderSupplierOrders();
   initNav();

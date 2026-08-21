@@ -16,7 +16,8 @@ const CHECKPOINT_REQUIRES_STATUS = [
 ];
 
 function requestSelectSql(string $where = ''): string {
-  return "SELECT cr.*, c.name AS client_name, s.name AS supplier_name,
+  return "SELECT cr.*, c.name AS client_name, c.contact_person AS client_contact_person,
+                 c.email AS client_email, c.phone AS client_phone, s.name AS supplier_name,
                  d.name AS driver_name, d.vehicle_plate AS driver_vehicle_plate, d.vehicle_model AS driver_vehicle_model,
                  po.id AS po_id, sinv.id AS sinv_id, dn.id AS dn_id, inv.id AS inv_id
           FROM client_requests cr
@@ -45,6 +46,11 @@ function serializeRequestRow(array $row): array {
     'id' => refCode('REQ', (int) $row['id']),
     'client' => $row['client_name'],
     'clientId' => (int) $row['client_id'],
+    'clientContact' => [
+      'name' => $row['client_contact_person'],
+      'email' => $row['client_email'],
+      'phone' => $row['client_phone'],
+    ],
     'destination' => $row['destination'],
     'product' => $row['product_name'],
     'unitUSD' => (float) $row['unit_usd'],

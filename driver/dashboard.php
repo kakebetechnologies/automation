@@ -1,3 +1,7 @@
+<?php
+require_once __DIR__ . '/../api/lib/page_guard.php';
+guardPage('driver');
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -109,14 +113,16 @@
       <p class="text-secondary" style="margin-bottom:16px;">Confirm delivery with the client's signature and a photo of the handover.</p>
       <div class="field">
         <label>Client Signature</label>
-        <div style="border:1.5px dashed var(--border-strong); border-radius:var(--r-md); height:100px; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:12.5px; background:var(--surface-muted);">Tap to sign</div>
+        <canvas id="signatureCanvas" width="460" height="120" style="border:1.5px dashed var(--border-strong); border-radius:var(--r-md); width:100%; height:100px; background:var(--surface-muted); touch-action:none; cursor:crosshair;"></canvas>
+        <button type="button" class="btn btn-ghost btn-sm mt-8" id="clearSignatureBtn">Clear signature</button>
       </div>
       <div class="field">
         <label>Delivery Photo</label>
-        <div class="doc-chip" style="border-style:dashed; cursor:pointer;">
+        <label class="doc-chip" style="border-style:dashed; cursor:pointer;" for="grnPhotoFile">
           <div class="doc-icon" id="cameraIcon"></div>
-          <div class="doc-info"><strong>Take or upload photo</strong><span>Proof of delivery</span></div>
-        </div>
+          <div class="doc-info"><strong id="grnPhotoLabel">Take or upload photo</strong><span>Proof of delivery</span></div>
+        </label>
+        <input type="file" id="grnPhotoFile" accept="image/*" capture="environment" style="display:none;">
       </div>
       <div class="field"><label>Quantity Confirmed by Client</label><input type="number" id="grnQty" placeholder="e.g. 2400"></div>
     </div>

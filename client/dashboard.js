@@ -1,14 +1,14 @@
 /* =========================================================
    Client Dashboard — render + interactions
-   Backed by the shared store (store.js): requests, invoices,
-   payments and tracking are genuinely shared with the Merchant
-   and Driver dashboards via localStorage.
+   Talks to the real backend — requests, invoices, payments and
+   tracking are genuinely shared with the Merchant and Driver
+   dashboards via MySQL.
    ========================================================= */
 
-const user = CURRENT_USER.client;
-const MY_COMPANY = "ABC Trading Co.";
+let user = null; // session identity, loaded on DOMContentLoaded
+let MY_COMPANY = "";
 
-function myRequests() { return listClientRequests(MY_COMPANY); }
+async function myRequests() { return listClientRequests(); }
 
 const NAV_META = {
   overview: { icon: "dashboard", label: "Overview" },
@@ -43,15 +43,16 @@ const REQUEST_STATUS_BADGE = {
 };
 function reqBadge(status) { return `<span class="badge ${REQUEST_STATUS_BADGE[status] || "badge-neutral"}">${status}</span>`; }
 
-function renderChrome() {
+async function renderChrome() {
   document.getElementById("sideAvatar").textContent = user.initials;
-  document.getElementById("sideName").textContent = user.name;
-  document.getElementById("sideRole").textContent = user.company;
+  document.getElementById("sideName").textContent = user.full_name;
+  document.getElementById("sideRole").textContent = MY_COMPANY;
   document.getElementById("topAvatar").textContent = user.initials;
-  document.getElementById("topName").textContent = user.name;
-  document.getElementById("topRole").textContent = user.role;
+  document.getElementById("topName").textContent = user.full_name;
+  document.getElementById("topRole").textContent = `Client — ${MY_COMPANY}`;
 
-  NAV_META.orders.badge = myRequests().length || null;
+  const reqs = await myRequests();
+  NAV_META.orders.badge = reqs.length || null;
   document.querySelectorAll(".nav-item[data-view]").forEach(item => {
     const meta = NAV_META[item.dataset.view];
     item.innerHTML = icon(meta.icon) + `<span class="label">${meta.label}</span>` + (meta.badge ? `<span class="badge-count">${meta.badge}</span>` : "");
@@ -66,22 +67,20 @@ function renderChrome() {
   document.getElementById("qaDocs").innerHTML = icon("documents") + " View All Invoices";
   document.getElementById("qaPay").innerHTML = icon("wallet") + " Make a Payment";
   document.getElementById("qaContact").innerHTML = icon("msg") + " Contact Merchant";
+
+  return reqs;
 }
 
-function renderNotifications() {
-  const staticNotifs = [
-    { icon: "info", color: "blue", text: "Welcome to your Falcon ERP client portal", time: "This week" },
-  ];
-  const merged = mergeStoreNotifications(`client:${MY_COMPANY}`, staticNotifs);
+async function renderNotifications() {
+  const merged = await loadFormattedNotifications();
   document.getElementById("notifList").innerHTML = merged.map(n => `
     <div class="doc-chip" style="border:none; border-bottom:1px solid var(--border); border-radius:0; background:none;">
       <div class="doc-icon kpi-icon ${n.color}" style="width:34px;height:34px;">${icon(n.icon)}</div>
       <div class="doc-info"><strong style="font-weight:600; white-space:normal;">${n.text}</strong><span>${n.time}</span></div>
-    </div>`).join("");
+    </div>`).join("") || `<div class="empty-state" style="padding:20px;">No notifications yet</div>`;
 }
 
-function renderKPIs() {
-  const reqs = myRequests();
+function renderKPIs(reqs) {
   const active = reqs.filter(r => !["Delivered", "Rejected"].includes(r.status)).length;
   const delivered = reqs.filter(r => r.status === "Delivered").length;
   const totalSpend = reqs.filter(r => !["Pending Approval", "Rejected", "Awaiting Payment", "Payment Submitted"].includes(r.status)).reduce((s, r) => s + r.total, 0);
@@ -101,8 +100,7 @@ function renderKPIs() {
     </div>`).join("");
 }
 
-function trackingTimelineHTML(reqId) {
-  const events = getTrackingEvents(reqId);
+function trackingTimelineHTML(events) {
   if (!events.length) return "";
   return `
     <div class="panel card-pad mt-16" style="box-shadow:none; background:var(--surface-muted);">
@@ -120,8 +118,8 @@ function trackingTimelineHTML(reqId) {
     </div>`;
 }
 
-function renderActiveOrder() {
-  const active = myRequests().find(r => !["Delivered", "Rejected"].includes(r.status)) || myRequests()[0];
+async function renderActiveOrder(reqs) {
+  const active = reqs.find(r => !["Delivered", "Rejected"].includes(r.status)) || reqs[0];
   if (!active) { document.getElementById("activeOrderCard").innerHTML = `<div class="panel"><div class="empty-state">No requests yet. Click "Request Products" to get started.</div></div>`; return; }
 
   const idx = Math.max(0, stepIndex(active.status));
@@ -145,6 +143,8 @@ function renderActiveOrder() {
     payCTA = `<div class="panel card-pad mt-16" style="box-shadow:none; background:var(--danger-50);"><p class="cell-strong" style="color:var(--danger-600);">Request rejected</p><p class="cell-muted mt-8">${active.rejectReason || ""}</p></div>`;
   }
 
+  const events = await getTrackingEvents(active.id);
+
   document.getElementById("activeOrderCard").innerHTML = `
     <div class="panel card-pad">
       <div class="flex justify-between" style="flex-wrap:wrap; gap:12px; margin-bottom:18px;">
@@ -160,7 +160,7 @@ function renderActiveOrder() {
 
       ${active.status !== "Rejected" ? `<div class="stepper mt-16">${stepsHtml}</div>` : ""}
       ${payCTA}
-      ${trackingTimelineHTML(active.id)}
+      ${trackingTimelineHTML(events)}
 
       <div class="flex gap-8 mt-16">
         <button class="btn btn-secondary btn-sm" data-view-invoice="${active.id}">${icon("documents","icon")} View Invoice</button>
@@ -182,54 +182,52 @@ function historyRow(r) {
       <td style="text-align:right;"><button class="icon-btn btn-sm" data-view-invoice="${r.id}">${icon("eye")}</button></td>
     </tr>`;
 }
-function renderOrderHistory() {
-  const reqs = [...myRequests()].reverse();
+function renderOrderHistory(reqs) {
+  const sorted = [...reqs].reverse();
   const head = `<thead><tr><th>Request</th><th>Product</th><th>Total</th><th>Status</th><th></th></tr></thead>`;
-  document.getElementById("orderHistoryPreview").innerHTML = head + `<tbody>${reqs.slice(0,4).map(historyRow).join("") || `<tr><td colspan="5"><div class="empty-state">No requests yet</div></td></tr>`}</tbody>`;
-  document.getElementById("orderHistoryTable").innerHTML = head + `<tbody>${reqs.map(historyRow).join("") || `<tr><td colspan="5"><div class="empty-state">No requests yet</div></td></tr>`}</tbody>`;
+  document.getElementById("orderHistoryPreview").innerHTML = head + `<tbody>${sorted.slice(0,4).map(historyRow).join("") || `<tr><td colspan="5"><div class="empty-state">No requests yet</div></td></tr>`}</tbody>`;
+  document.getElementById("orderHistoryTable").innerHTML = head + `<tbody>${sorted.map(historyRow).join("") || `<tr><td colspan="5"><div class="empty-state">No requests yet</div></td></tr>`}</tbody>`;
   document.querySelectorAll("[data-view-invoice]").forEach(el => el.addEventListener("click", () => viewInvoice(el.dataset.viewInvoice)));
 }
 
-function viewInvoice(reqId) {
-  const req = getClientRequest(reqId);
-  const inv = getClientInvoice(reqId);
+async function viewInvoice(reqId) {
+  const inv = await getClientInvoice(reqId).catch(() => null);
+  if (!inv) { toast("Invoice not found.", "error"); return; }
   const html = docPreviewHTML({
     title: "Sales Invoice",
-    subtitle: `Issued by Falcon Beverages (U) Ltd to ${req.client}`,
+    subtitle: `Issued by Falcon Beverages (U) Ltd to ${inv.client}`,
     fields: [
-      { label: "Invoice No.", value: inv.id }, { label: "Request Ref.", value: req.id },
-      { label: "Destination", value: req.destination }, { label: "Issued", value: inv.issuedDate },
+      { label: "Invoice No.", value: inv.id }, { label: "Request Ref.", value: inv.requestId },
+      { label: "Destination", value: inv.destination }, { label: "Issued", value: inv.issuedDate },
       { label: "Status", value: inv.status },
     ],
-    tableRows: { head: ["Description", "Qty (units)", "Unit Price", "Total"], rows: [[req.product, req.qty.toLocaleString(), `$${req.unitUSD.toFixed(2)}`, fmtMoney(req.total)]] },
+    tableRows: { head: ["Description", "Qty (units)", "Unit Price", "Total"], rows: [[inv.product, inv.qty.toLocaleString(), `$${inv.unitUSD.toFixed(2)}`, fmtMoney(inv.total)]] },
     note: "Please complete payment once this invoice is approved, then upload your payment receipt on the Payments tab.",
     stamp: inv.status === "Paid" ? "PAID" : inv.status === "Approved" ? "APPROVED" : inv.status === "Rejected" ? "REJECTED" : "PENDING",
   });
-  openDocViewer("Sales Invoice", html, `${inv.id}-${req.client}`);
+  openDocViewer("Sales Invoice", html, `${inv.id}-${inv.client}`);
 }
 
-function renderDocuments() {
+async function renderDocuments(reqs) {
   const select = document.getElementById("docOrderSelect");
-  const reqs = myRequests();
   select.innerHTML = reqs.map(r => `<option value="${r.id}">${r.id} — ${r.product}</option>`).join("");
-  const renderList = (id) => {
-    const req = reqs.find(x => x.id === id);
-    const inv = getClientInvoice(id);
+  const renderList = async (id) => {
+    const inv = await getClientInvoice(id).catch(() => null);
+    if (!inv) { document.getElementById("docList").innerHTML = `<div class="empty-state">No invoice yet</div>`; return; }
     document.getElementById("docList").innerHTML = `
       <div class="doc-chip" style="cursor:pointer;" data-view-invoice="${id}">
         <div class="doc-icon">${icon("pdf")}</div>
-        <div class="doc-info"><strong>Sales Invoice — ${inv.id}</strong><span>${req.createdDate} &middot; ${inv.status}</span></div>
+        <div class="doc-info"><strong>Sales Invoice — ${inv.id}</strong><span>${inv.issuedDate} &middot; ${inv.status}</span></div>
         <span class="doc-action">${icon("eye")}</span>
       </div>`;
     document.querySelector("[data-view-invoice]").addEventListener("click", () => viewInvoice(id));
   };
-  select.addEventListener("change", () => renderList(select.value));
+  select.onchange = () => renderList(select.value);
   if (reqs[0]) renderList(reqs[0].id);
   else document.getElementById("docList").innerHTML = `<div class="empty-state">No invoices yet</div>`;
 }
 
-function renderPayments() {
-  const reqs = myRequests();
+function renderPayments(reqs) {
   document.getElementById("paymentsTable").innerHTML = `
     <thead><tr><th>Request</th><th>Total</th><th>Status</th></tr></thead>
     <tbody>${reqs.map(r => `
@@ -245,21 +243,25 @@ function renderPayments() {
   document.getElementById("paymentAmount").value = payable[0] ? payable[0].total : "";
   select.onchange = () => { const r = payable.find(x => x.id === select.value); document.getElementById("paymentAmount").value = r ? r.total : ""; };
 
+  document.getElementById("paymentReceiptFile").value = "";
+  document.getElementById("receiptFileLabel").textContent = "Click to upload";
+
   const submitBtn = document.getElementById("submitPaymentBtn");
   submitBtn.disabled = payable.length === 0;
 }
 
-function renderNewOrderModal() {
-  const products = listSupplierProducts();
+async function renderNewOrderModal() {
+  const products = await listSupplierProducts();
   document.getElementById("newOrderProduct").innerHTML = products.map(p => `<option value="${p.id}">${p.name} — ${p.supplier} ($${p.priceUSD.toFixed(2)})</option>`).join("");
   const updateEstimate = () => {
     const p = products.find(x => x.id === document.getElementById("newOrderProduct").value);
     const qty = parseInt(document.getElementById("newOrderQty").value) || 0;
     document.getElementById("orderEstimate").textContent = fmtMoney((p ? p.priceUSD : 0) * qty);
   };
-  document.getElementById("newOrderProduct").addEventListener("change", updateEstimate);
-  document.getElementById("newOrderQty").addEventListener("input", updateEstimate);
+  document.getElementById("newOrderProduct").onchange = updateEstimate;
+  document.getElementById("newOrderQty").oninput = updateEstimate;
   updateEstimate();
+  return products;
 }
 
 function switchView(view) {
@@ -276,39 +278,48 @@ function initNav() {
   document.querySelectorAll("[data-nav]").forEach(item => item.addEventListener("click", (e) => { e.preventDefault(); switchView(item.dataset.nav); }));
 }
 
-function renderAll() {
-  renderChrome();
+async function renderAll() {
+  const reqs = await renderChrome();
   renderNotifications();
-  renderKPIs();
-  renderActiveOrder();
-  renderOrderHistory();
-  renderDocuments();
-  renderPayments();
+  renderKPIs(reqs);
+  renderActiveOrder(reqs);
+  renderOrderHistory(reqs);
+  renderDocuments(reqs);
+  renderPayments(reqs);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  renderAll();
-  renderNewOrderModal();
+document.addEventListener("DOMContentLoaded", async () => {
+  user = await requireSessionUser("client");
+  if (!user) return;
+  MY_COMPANY = user.client.name;
+
+  await renderAll();
+  let newOrderProducts = await renderNewOrderModal();
   initNav();
 
-  document.getElementById("submitOrderBtn").addEventListener("click", () => {
-    const products = listSupplierProducts();
-    const p = products.find(x => x.id === document.getElementById("newOrderProduct").value);
+  document.getElementById("paymentReceiptFile").addEventListener("change", () => {
+    const f = document.getElementById("paymentReceiptFile").files[0];
+    document.getElementById("receiptFileLabel").textContent = f ? f.name : "Click to upload";
+  });
+
+  document.getElementById("submitOrderBtn").addEventListener("click", async () => {
+    const p = newOrderProducts.find(x => x.id === document.getElementById("newOrderProduct").value);
     const qty = parseInt(document.getElementById("newOrderQty").value) || 0;
     const destination = document.getElementById("newOrderDestination").value;
     if (!p || qty <= 0) { toast("Please choose a product and valid quantity.", "error"); return; }
-    createClientRequest({ client: MY_COMPANY, destination, productName: p.name, unitUSD: p.priceUSD, qty });
+    await createClientRequest({ supplierProductId: p.idNum, destination, qty });
     closeModal("modalNewOrder");
     renderAll();
     toast("Request submitted! The Merchant has been notified and will review your invoice shortly.");
   });
 
-  document.getElementById("submitPaymentBtn").addEventListener("click", () => {
+  document.getElementById("submitPaymentBtn").addEventListener("click", async () => {
     const reqId = document.getElementById("paymentOrderSelect").value;
     if (!reqId) { toast("No invoice selected.", "error"); return; }
     const amount = parseFloat(document.getElementById("paymentAmount").value) || 0;
-    const method = document.querySelector("#view-payments select:not(#paymentOrderSelect)").value;
-    submitPaymentReceipt(reqId, { method, amount, uploadedDate: new Date().toISOString().slice(0,10) });
+    const method = document.getElementById("paymentMethodSelect").value;
+    const file = document.getElementById("paymentReceiptFile").files[0] || null;
+    await submitPaymentReceipt(reqId, { method, amount, file });
     renderAll();
     toast("Receipt uploaded. Merchant will confirm your payment shortly.");
   });

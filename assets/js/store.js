@@ -128,8 +128,8 @@ async function addTrackingEvent(reqId, type, geo, extra = {}) {
     geoStatus: (geo && geo.status) || "unavailable",
     confirmedQty: extra.confirmedQty,
     photo: extra.photoFile,
-    signature: extra.signatureFile,
   });
+  if (extra.signatureBlob) form.append("signature", extra.signatureBlob, "signature.png");
   const data = await apiFetch("requests/tracking/checkpoint.php", { method: "POST", form });
   return data.request;
 }

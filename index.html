@@ -80,7 +80,7 @@
 
 <script src="assets/js/icons.js"></script>
 <script>
-  document.querySelector(".demo-note").innerHTML = icon("info","icon") + " Demo build — pick a role below and sign in with any credentials to preview that dashboard.";
+  document.querySelector(".demo-note").innerHTML = icon("info","icon") + " " + document.querySelector(".demo-note").innerHTML;
   document.getElementById("loginSubmit").innerHTML = 'Sign In as <span id="roleLabel">Merchant</span>' + icon("chevronRight","icon");
 
   const roleIcons = { merchant: "briefcase", supplier: "boxes", client: "clients", driver: "truck" };
