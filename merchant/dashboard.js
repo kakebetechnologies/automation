@@ -290,22 +290,102 @@ async function renderDrivers() {
    Documents (order picker; the document chips stay decorative —
    real per-order customs/export docs are a future phase)
    ========================================================= */
+function salesContractHTML(doc) {
+  return docPreviewHTML({
+    title: "Sales Contract",
+    subtitle: `Contract between ${MERCHANT_COMPANY} and ${doc.client}`,
+    fields: [
+      { label: "Contract No.", value: doc.number }, { label: "Client", value: doc.client },
+      { label: "Destination", value: doc.destination }, { label: "Date", value: doc.date },
+      { label: "Payment Terms", value: doc.paymentTerms }, { label: "Delivery Terms", value: doc.deliveryTerms },
+    ],
+    tableRows: { head: ["Description", "Qty (units)", "Unit Price", "Total"], rows: [[doc.product, doc.qty.toLocaleString(), `$${doc.unitUSD.toFixed(2)}`, fmtMoney(doc.total)]] },
+    note: "This contract governs the sale of goods described above. Signed acceptance is implied by payment.",
+    stamp: "CONTRACT",
+  });
+}
+function commercialInvoiceHTML(doc) {
+  return docPreviewHTML({
+    title: "Commercial Invoice",
+    subtitle: `${doc.exporter} — export to ${doc.countryOfDestination}`,
+    fields: [
+      { label: "Invoice No.", value: doc.number }, { label: "Exporter", value: doc.exporter },
+      { label: "Consignee", value: doc.consignee }, { label: "Country of Origin", value: doc.countryOfOrigin },
+      { label: "Country of Destination", value: doc.countryOfDestination }, { label: "HS Code", value: doc.hsCode },
+      { label: "Terms of Delivery", value: doc.termsOfDelivery }, { label: "Date", value: doc.date },
+    ],
+    tableRows: { head: ["Description", "Qty (units)", "Unit Price", "Total"], rows: [[doc.product, doc.qty.toLocaleString(), `$${doc.unitUSD.toFixed(2)}`, fmtMoney(doc.total)]] },
+    note: `Currency: ${doc.currency}. This invoice is presented for customs clearance purposes.`,
+    stamp: "EXPORT",
+  });
+}
+const GENERATED_DOC_BUILDERS = { "Sales Contract": salesContractHTML, "Commercial Invoice": commercialInvoiceHTML };
+
+let refreshDocList = null;
+
 async function renderDocuments(requests) {
   const select = document.getElementById("docOrderSelect");
   select.innerHTML = requests.map(r => `<option value="${r.id}">${r.id} — ${r.client}</option>`).join("");
-  const renderList = (id) => {
-    const r = requests.find(x => x.id === id);
+
+  const renderList = async (reqId) => {
+    const r = requests.find(x => x.id === reqId);
     if (!r) return;
-    const docs = ["Sales Contract", "Commercial Invoice", "Certificate of Origin", "UNBS Certificate", "Export Declaration", "VAT Certificate"];
-    document.getElementById("docList").innerHTML = docs.map(d => `
-      <div class="doc-chip">
-        <div class="doc-icon">${icon("pdf")}</div>
-        <div class="doc-info"><strong>${d}</strong><span>${r.client} &middot; ${id} &middot; Generated ${r.createdDate}</span></div>
-        <a class="doc-action" href="#" title="Download">${icon("download")}</a>
-      </div>`).join("");
+    const docs = await listOrderDocuments(reqId);
+    document.getElementById("docList").innerHTML = docs.map(d => {
+      if (d.kind === "generated") {
+        return `
+          <div class="doc-chip" style="cursor:pointer;" data-gen="${d.type}">
+            <div class="doc-icon">${icon("pdf")}</div>
+            <div class="doc-info"><strong>${d.type}</strong><span>${r.client} &middot; ${reqId} &middot; Generated automatically</span></div>
+            <span class="doc-action">${icon("eye")}</span>
+          </div>`;
+      }
+      const status = d.verified
+        ? `<span class="badge badge-success">Verified</span>`
+        : d.available ? `<span class="badge badge-warning">Pending Verification</span>` : `<span class="badge badge-neutral">Not Uploaded</span>`;
+      return `
+        <div class="doc-chip">
+          <div class="doc-icon">${icon("pdf")}</div>
+          <div class="doc-info"><strong>${d.type}</strong><span>${d.notes || (d.available ? "Uploaded" : "Awaiting upload")}</span></div>
+          ${status}
+          ${d.available ? `<a class="doc-action" href="../api/files/serve.php?id=${d.fileId}" target="_blank" rel="noopener" title="View">${icon("eye")}</a>` : ""}
+          <button class="icon-btn btn-sm" data-upload="${d.type}" title="${d.available ? "Re-upload" : "Upload"}">${icon("upload")}</button>
+          ${d.available && !d.verified ? `<button class="icon-btn btn-sm" data-verify="${d.id}" title="Verify">${icon("check")}</button>` : ""}
+        </div>`;
+    }).join("");
+
+    document.querySelectorAll("#docList [data-gen]").forEach(el => el.addEventListener("click", async () => {
+      const doc = await generateOrderDocument(reqId, el.dataset.gen);
+      openDocViewer(el.dataset.gen, GENERATED_DOC_BUILDERS[el.dataset.gen](doc), `${doc.number}-${r.client}`);
+    }));
+    document.querySelectorAll("#docList [data-upload]").forEach(el => el.addEventListener("click", () => openUploadOrderDocModal(reqId, el.dataset.upload)));
+    document.querySelectorAll("#docList [data-verify]").forEach(el => el.addEventListener("click", async (e) => {
+      await verifyOrderDocument(e.currentTarget.dataset.verify, true);
+      toast("Document verified.");
+      renderList(reqId);
+    }));
   };
-  select.onchange = () => renderList(select.value);
+
+  refreshDocList = () => renderList(select.value);
+  select.onchange = refreshDocList;
   if (requests.length) renderList(requests[0].id);
+}
+
+function openUploadOrderDocModal(reqId, docType) {
+  document.getElementById("uploadOrderDocTitle").textContent = `Upload ${docType}`;
+  document.getElementById("uploadOrderDocLabel").innerHTML = `<strong>${reqId}</strong> — ${docType}`;
+  document.getElementById("orderDocFile").value = "";
+  document.getElementById("orderDocNotes").value = "";
+  openModal("modalUploadOrderDoc");
+  document.getElementById("confirmUploadOrderDocBtn").onclick = async () => {
+    const file = document.getElementById("orderDocFile").files[0];
+    if (!file) { toast("Choose a file to upload.", "error"); return; }
+    const notes = document.getElementById("orderDocNotes").value.trim();
+    await uploadOrderDocument({ requestId: reqId, docType, file, notes });
+    closeModal("modalUploadOrderDoc");
+    toast(`${docType} uploaded.`);
+    refreshDocList?.();
+  };
 }
 
 function renderReports(requests) {

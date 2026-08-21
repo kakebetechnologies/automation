@@ -86,6 +86,17 @@ function requireRequestRow(PDO $pdo, int $id): array {
   return $row;
 }
 
+// $row must at least have client_id, driver_id, supplier_id (raw client_requests columns).
+function userOwnsRequestRow(array $user, array $row): bool {
+  return match ($user['role']) {
+    'merchant' => true,
+    'client' => (int) $row['client_id'] === $user['client_id'],
+    'driver' => $row['driver_id'] !== null && (int) $row['driver_id'] === $user['driver_id'],
+    'supplier' => $row['supplier_id'] !== null && (int) $row['supplier_id'] === $user['supplier_id'],
+    default => false,
+  };
+}
+
 function idFromRef(?string $ref): int {
   $id = parseRefCode($ref);
   if ($id === null) json_error('Invalid id', 422);

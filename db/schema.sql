@@ -6,6 +6,7 @@ USE falcon_erp;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS order_documents;
 DROP TABLE IF EXISTS files;
 DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS driver_compliance_documents;
@@ -116,7 +117,7 @@ CREATE INDEX idx_sp_supplier ON supplier_products(supplier_id);
 
 CREATE TABLE files (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  owner_type ENUM('receipt','grn_photo','grn_signature','compliance_doc','avatar') NOT NULL,
+  owner_type ENUM('receipt','grn_photo','grn_signature','compliance_doc','avatar','order_document') NOT NULL,
   uploaded_by_user_id INT NOT NULL,
   original_filename VARCHAR(255) NOT NULL,
   stored_filename VARCHAR(255) NOT NULL UNIQUE,
@@ -256,6 +257,33 @@ CREATE TABLE driver_compliance_documents (
   CONSTRAINT fk_dcd_driver FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
   CONSTRAINT fk_dcd_file FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL,
   CONSTRAINT fk_dcd_verifier FOREIGN KEY (verified_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- ---------------------------------------------------------------------
+-- Export/customs documents (regulatory docs held per order — uploaded and
+-- verified by the merchant; the other two document types Falcon itself
+-- issues — Sales Contract, Commercial Invoice — are generated on the fly
+-- from order data, same as the existing Sales Invoice, and have no row here)
+-- ---------------------------------------------------------------------
+
+CREATE TABLE order_documents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  request_id INT NOT NULL,
+  doc_type ENUM('Certificate of Origin','UNBS Certificate','Export Declaration','VAT Certificate') NOT NULL,
+  file_id INT NULL,
+  uploaded_by_user_id INT NULL,
+  uploaded_at DATETIME NULL,
+  notes VARCHAR(500) NULL,
+  verified TINYINT(1) NOT NULL DEFAULT 0,
+  verified_by_user_id INT NULL,
+  verified_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_request_doctype (request_id, doc_type),
+  CONSTRAINT fk_od_request FOREIGN KEY (request_id) REFERENCES client_requests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_od_file FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL,
+  CONSTRAINT fk_od_uploader FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_od_verifier FOREIGN KEY (verified_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- ---------------------------------------------------------------------

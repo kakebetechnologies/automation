@@ -14,7 +14,7 @@ $pdo = db();
 $reset = in_array('--reset', $argv, true);
 
 $tables = [
-  'notifications', 'driver_compliance_documents', 'tracking_events', 'dispatch_notes',
+  'notifications', 'order_documents', 'driver_compliance_documents', 'tracking_events', 'dispatch_notes',
   'client_invoices', 'supplier_invoices', 'purchase_orders', 'client_requests',
   'files', 'supplier_products', 'users', 'drivers', 'suppliers', 'clients',
 ];

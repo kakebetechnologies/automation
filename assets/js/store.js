@@ -171,6 +171,24 @@ async function getDispatchNoteDoc(id) {
   return data.dispatchNote;
 }
 
+/* ---------- Export/customs documents (per order) ---------- */
+async function listOrderDocuments(requestId) {
+  const data = await apiFetch(`documents/order-documents/list.php?request_id=${encodeURIComponent(requestId)}`);
+  return data.documents;
+}
+async function generateOrderDocument(requestId, docType) {
+  const data = await apiFetch(`documents/order-documents/generate.php?request_id=${encodeURIComponent(requestId)}&docType=${encodeURIComponent(docType)}`);
+  return data.document;
+}
+async function uploadOrderDocument({ requestId, docType, file, notes }) {
+  const form = toForm({ requestId, docType, file, notes });
+  const data = await apiFetch("documents/order-documents/upload.php", { method: "POST", form });
+  return data.id;
+}
+async function verifyOrderDocument(id, verified) {
+  await apiFetch("documents/order-documents/verify.php", { method: "POST", json: { id, verified } });
+}
+
 /* ---------- Clients / Suppliers / Drivers (merchant back-office) ---------- */
 async function listClients() { return (await apiFetch("clients/list.php")).clients; }
 async function createClient(fields) { return (await apiFetch("clients/create.php", { method: "POST", json: fields })).id; }

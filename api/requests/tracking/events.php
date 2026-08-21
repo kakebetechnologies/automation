@@ -7,14 +7,7 @@ $pdo = db();
 $id = idFromRef($_GET['request_id'] ?? null);
 $row = requireRequestRow($pdo, $id);
 
-$ownsIt = match ($user['role']) {
-  'merchant' => true,
-  'client' => (int) $row['client_id'] === $user['client_id'],
-  'driver' => $row['driver_id'] !== null && (int) $row['driver_id'] === $user['driver_id'],
-  'supplier' => $row['supplier_id'] !== null && (int) $row['supplier_id'] === $user['supplier_id'],
-  default => false,
-};
-if (!$ownsIt) json_error('Forbidden', 403);
+if (!userOwnsRequestRow($user, $row)) json_error('Forbidden', 403);
 
 $stmt = $pdo->prepare(
   'SELECT te.*, d.name AS driver_name FROM tracking_events te

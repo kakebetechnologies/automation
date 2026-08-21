@@ -8,14 +8,7 @@ $id = idFromRef($_GET['id'] ?? null);
 $row = fetchRequestRow($pdo, $id);
 if (!$row) json_error('Request not found', 404);
 
-$ownsIt = match ($user['role']) {
-  'merchant' => true,
-  'client' => (int) $row['client_id'] === $user['client_id'],
-  'driver' => $row['driver_id'] !== null && (int) $row['driver_id'] === $user['driver_id'],
-  'supplier' => $row['supplier_id'] !== null && (int) $row['supplier_id'] === $user['supplier_id'],
-  default => false,
-};
-if (!$ownsIt) json_error('Forbidden', 403);
+if (!userOwnsRequestRow($user, $row)) json_error('Forbidden', 403);
 
 $result = serializeRequestRow($row);
 

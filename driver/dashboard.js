@@ -37,17 +37,21 @@ function initSignaturePad() {
   const ctx = canvas.getContext("2d");
   let drawing = false, hasSignature = false;
 
+  // Sizes the drawing buffer to the canvas's actual on-screen size. Must be
+  // re-run whenever the (initially hidden, display:none) GRN modal opens —
+  // measuring at page load gives a 0-width rect since the modal isn't laid out yet.
   function fit() {
     const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
     const ratio = window.devicePixelRatio || 1;
     canvas.width = rect.width * ratio;
     canvas.height = rect.height * ratio;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(ratio, ratio);
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
     ctx.strokeStyle = "#1a0e0e";
   }
-  fit();
 
   function pos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -75,6 +79,7 @@ function initSignaturePad() {
     hasSignature: () => hasSignature,
     toBlob: () => new Promise(resolve => canvas.toBlob(resolve, "image/png")),
     clear,
+    resizeAndClear: () => { fit(); clear(); },
   };
 }
 
@@ -194,8 +199,8 @@ async function renderTripCard() {
     document.getElementById("grnQty").value = "";
     document.getElementById("grnPhotoFile").value = "";
     document.getElementById("grnPhotoLabel").textContent = "Take or upload photo";
-    signaturePad?.clear();
     openModal("modalGRN");
+    signaturePad?.resizeAndClear();
   });
   document.getElementById("viewInvoiceBtn")?.addEventListener("click", () => viewClientInvoiceDoc(req.id));
 
@@ -250,6 +255,35 @@ async function viewDispatchNoteDoc(req) {
   openDocViewer("Dispatch Note", html, `${dn.id}`);
 }
 
+function salesContractHTML(doc) {
+  return docPreviewHTML({
+    title: "Sales Contract", subtitle: `Contract between Falcon Beverages (U) Ltd and ${doc.client}`,
+    fields: [
+      { label: "Contract No.", value: doc.number }, { label: "Client", value: doc.client },
+      { label: "Destination", value: doc.destination }, { label: "Date", value: doc.date },
+      { label: "Payment Terms", value: doc.paymentTerms }, { label: "Delivery Terms", value: doc.deliveryTerms },
+    ],
+    tableRows: { head: ["Description", "Qty (units)", "Unit Price", "Total"], rows: [[doc.product, doc.qty.toLocaleString(), `$${doc.unitUSD.toFixed(2)}`, fmtMoney(doc.total)]] },
+    note: "This contract governs the sale of goods described above.",
+    stamp: "CONTRACT",
+  });
+}
+function commercialInvoiceHTML(doc) {
+  return docPreviewHTML({
+    title: "Commercial Invoice", subtitle: `${doc.exporter} — export to ${doc.countryOfDestination}`,
+    fields: [
+      { label: "Invoice No.", value: doc.number }, { label: "Exporter", value: doc.exporter },
+      { label: "Consignee", value: doc.consignee }, { label: "Country of Origin", value: doc.countryOfOrigin },
+      { label: "Country of Destination", value: doc.countryOfDestination }, { label: "HS Code", value: doc.hsCode },
+      { label: "Terms of Delivery", value: doc.termsOfDelivery }, { label: "Date", value: doc.date },
+    ],
+    tableRows: { head: ["Description", "Qty (units)", "Unit Price", "Total"], rows: [[doc.product, doc.qty.toLocaleString(), `$${doc.unitUSD.toFixed(2)}`, fmtMoney(doc.total)]] },
+    note: `Currency: ${doc.currency}. Present this for customs clearance.`,
+    stamp: "EXPORT",
+  });
+}
+const GENERATED_DOC_BUILDERS = { "Sales Contract": salesContractHTML, "Commercial Invoice": commercialInvoiceHTML };
+
 async function renderTripDocs() {
   const host = document.getElementById("tripDocs");
   const req = await myActiveRequest();
@@ -259,6 +293,22 @@ async function renderTripDocs() {
     { label: "Supplier Invoice", sub: req.supplierInvoiceId || "Not yet issued", fn: () => viewSupplierInvoiceDoc(req) },
     { label: "Sales Invoice (Client)", sub: req.invoiceId, fn: () => viewClientInvoiceDoc(req.id) },
   ];
+
+  const orderDocs = await listOrderDocuments(req.id).catch(() => []);
+  orderDocs.forEach(d => {
+    if (d.kind === "generated") {
+      docs.push({ label: d.type, sub: "Export paperwork", fn: async () => {
+        const doc = await generateOrderDocument(req.id, d.type);
+        openDocViewer(d.type, GENERATED_DOC_BUILDERS[d.type](doc), `${doc.number}`);
+      } });
+    } else {
+      docs.push({ label: d.type, sub: d.verified ? "Verified" : d.available ? "Pending verification" : "Not yet uploaded", fn: () => {
+        if (!d.verified) { toast(`${d.type} hasn't been verified by your administrator yet.`, "info"); return; }
+        window.open(`../api/files/serve.php?id=${d.fileId}`, "_blank");
+      } });
+    }
+  });
+
   host.innerHTML = docs.map((d, i) => `
     <div class="doc-chip" style="cursor:pointer;" data-doc-idx="${i}">
       <div class="doc-icon">${icon("pdf")}</div>

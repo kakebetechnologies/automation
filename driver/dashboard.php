@@ -148,8 +148,8 @@ guardPage('driver');
 
 <script src="../assets/js/icons.js"></script>
 <script src="../assets/js/mock-data.js"></script>
-<script src="../assets/js/store.js"></script>
-<script src="../assets/js/app.js"></script>
-<script src="dashboard.js"></script>
+<script src="../assets/js/store.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/store.js'); ?>"></script>
+<script src="../assets/js/app.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/app.js'); ?>"></script>
+<script src="dashboard.js?v=<?php echo @filemtime(__DIR__ . '/dashboard.js'); ?>"></script>
 </body>
 </html>

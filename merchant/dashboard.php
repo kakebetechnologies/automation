@@ -187,7 +187,7 @@ guardPage('merchant');
 
       <!-- ============ DOCUMENTS ============ -->
       <section class="view" id="view-documents" style="display:none;">
-        <div class="content-header"><div><h2>Documents</h2><p class="sub">Every export document, generated automatically per order</p></div></div>
+        <div class="content-header"><div><h2>Documents</h2><p class="sub">Export &amp; customs paperwork per order — Sales Contract and Commercial Invoice are generated automatically; the rest are uploaded and verified here</p></div></div>
         <div class="panel card-pad">
           <div class="field" style="max-width:320px; margin-bottom:20px;">
             <label>Select Order</label>
@@ -413,6 +413,22 @@ guardPage('merchant');
   </div>
 </div>
 
+<!-- Upload Regulatory Document Modal -->
+<div class="modal-overlay" id="modalUploadOrderDoc">
+  <div class="modal">
+    <div class="modal-header"><h3 id="uploadOrderDocTitle">Upload Document</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body">
+      <p class="text-secondary" id="uploadOrderDocLabel" style="margin-bottom:16px;"></p>
+      <div class="field"><label>File (PDF, JPG or PNG — max 8MB)</label><input type="file" id="orderDocFile" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"></div>
+      <div class="field"><label>Notes (optional — e.g. certificate number)</label><input id="orderDocNotes" placeholder="e.g. UNBS-2026-00417"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" id="confirmUploadOrderDocBtn">Upload</button>
+    </div>
+  </div>
+</div>
+
 <!-- Document Viewer Modal (view / print / download) -->
 <div class="modal-overlay" id="modalDocViewer">
   <div class="modal modal-lg">
@@ -428,8 +444,8 @@ guardPage('merchant');
 
 <script src="../assets/js/icons.js"></script>
 <script src="../assets/js/mock-data.js"></script>
-<script src="../assets/js/store.js"></script>
-<script src="../assets/js/app.js"></script>
-<script src="dashboard.js"></script>
+<script src="../assets/js/store.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/store.js'); ?>"></script>
+<script src="../assets/js/app.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/app.js'); ?>"></script>
+<script src="dashboard.js?v=<?php echo @filemtime(__DIR__ . '/dashboard.js'); ?>"></script>
 </body>
 </html>

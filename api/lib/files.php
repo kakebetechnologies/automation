@@ -104,6 +104,18 @@ function authorizeFileAccess(PDO $pdo, array $fileRow, array $user): bool {
       $driverId = $stmt->fetchColumn();
       return $user['role'] === 'driver' && $driverId !== false && (int) $driverId === $user['driver_id'];
     }
+    case 'order_document': {
+      $stmt = $pdo->prepare('SELECT cr.client_id, cr.driver_id, cr.supplier_id FROM order_documents od
+                              JOIN client_requests cr ON cr.id = od.request_id
+                              WHERE od.file_id = ?');
+      $stmt->execute([$fileRow['id']]);
+      $row = $stmt->fetch();
+      if (!$row) return false;
+      if ($user['role'] === 'client' && (int) $row['client_id'] === $user['client_id']) return true;
+      if ($user['role'] === 'driver' && $row['driver_id'] !== null && (int) $row['driver_id'] === $user['driver_id']) return true;
+      if ($user['role'] === 'supplier' && $row['supplier_id'] !== null && (int) $row['supplier_id'] === $user['supplier_id']) return true;
+      return false;
+    }
     case 'avatar':
       return true; // profile photos are low-sensitivity and shown across dashboards
     default:

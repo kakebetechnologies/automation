@@ -27,7 +27,14 @@ function buildSessionPayload(PDO $pdo, array $user): array {
   if ($user['driver_id']) {
     $stmt = $pdo->prepare('SELECT id, name, phone, vehicle_plate, vehicle_model FROM drivers WHERE id = ?');
     $stmt->execute([$user['driver_id']]);
-    $payload['driver'] = $stmt->fetch() ?: null;
+    $driver = $stmt->fetch();
+    $payload['driver'] = $driver ? [
+      'id' => (int) $driver['id'],
+      'name' => $driver['name'],
+      'phone' => $driver['phone'],
+      'vehiclePlate' => $driver['vehicle_plate'],
+      'vehicleModel' => $driver['vehicle_model'],
+    ] : null;
   }
 
   return $payload;
