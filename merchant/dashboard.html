@@ -260,16 +260,17 @@
 <!-- ============ MODALS ============ -->
 <div class="modal-overlay" id="modalProduct">
   <div class="modal">
-    <div class="modal-header"><h3>Add New Product</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-header"><h3 id="productModalTitle">Add New Product</h3><button class="modal-close" data-modal-close></button></div>
     <div class="modal-body">
-      <div class="field"><label>Product Name</label><input placeholder="e.g. Sky Water 750ml"></div>
+      <div class="field"><label>Supplier</label><select id="productSupplierSelect"></select></div>
+      <div class="field"><label>Product Name</label><input id="productNameInput" placeholder="e.g. Sky Water 750ml"></div>
       <div class="field-row">
-        <div class="field"><label>Packaging</label><input placeholder="24 bottles / carton"></div>
-        <div class="field"><label>Stock (units)</label><input type="number" placeholder="0"></div>
+        <div class="field"><label>Packaging</label><input id="productPackInput" placeholder="24 bottles / carton"></div>
+        <div class="field"><label>Stock (units)</label><input type="number" id="productStockInput" placeholder="0"></div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Price (USD)</label><input type="number" step="0.01" placeholder="0.00"></div>
-        <div class="field"><label>Price (UGX)</label><input type="number" placeholder="0"></div>
+        <div class="field"><label>Price (USD)</label><input type="number" step="0.01" id="productPriceUsdInput" placeholder="0.00"></div>
+        <div class="field"><label>Price (UGX)</label><input type="number" id="productPriceUgxInput" placeholder="0"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -283,12 +284,15 @@
   <div class="modal">
     <div class="modal-header"><h3>Add New Client</h3><button class="modal-close" data-modal-close></button></div>
     <div class="modal-body">
-      <div class="field"><label>Company Name</label><input placeholder="e.g. Nile Fresh Ltd"></div>
+      <div class="field"><label>Company Name</label><input id="clientNameInput" placeholder="e.g. Nile Fresh Ltd"></div>
       <div class="field-row">
-        <div class="field"><label>Country</label><select><option>South Sudan</option><option>DR Congo</option><option>Kenya</option></select></div>
-        <div class="field"><label>Contact Person</label><input placeholder="Full name"></div>
+        <div class="field"><label>Country</label><select id="clientCountryInput"><option>South Sudan</option><option>DR Congo</option><option>Kenya</option></select></div>
+        <div class="field"><label>Contact Person</label><input id="clientContactInput" placeholder="Full name"></div>
       </div>
-      <div class="field"><label>Email</label><input type="email" placeholder="name@company.com"></div>
+      <div class="field-row">
+        <div class="field"><label>Email</label><input type="email" id="clientEmailInput" placeholder="name@company.com"></div>
+        <div class="field"><label>Phone</label><input id="clientPhoneInput" placeholder="+256 ..."></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" data-modal-close>Cancel</button>
@@ -297,28 +301,38 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalDriver">
+  <div class="modal">
+    <div class="modal-header"><h3>Add New Driver</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-body">
+      <div class="field"><label>Full Name</label><input id="driverNameInput" placeholder="e.g. Moses Okwir"></div>
+      <div class="field-row">
+        <div class="field"><label>Phone</label><input id="driverPhoneInput" placeholder="+256 ..."></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Vehicle Plate</label><input id="driverPlateInput" placeholder="UBH 442K"></div>
+        <div class="field"><label>Vehicle Model</label><input id="driverModelInput" placeholder="Fuso Canter"></div>
+      </div>
+      <p class="hint">A new driver starts with 5 compliance documents pending — upload and verify them from the driver's card before assigning trips.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-modal-close>Cancel</button>
+      <button class="btn btn-primary" id="saveDriverBtn">Add Driver</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalDriverAssign">
   <div class="modal">
-    <div class="modal-header"><h3>Assign Driver to Order</h3><button class="modal-close" data-modal-close></button></div>
+    <div class="modal-header"><h3>Assign Driver to a Ready Request</h3><button class="modal-close" data-modal-close></button></div>
     <div class="modal-body">
-      <div class="field"><label>Order</label><select id="assignOrderSelect"></select></div>
+      <div class="field"><label>Request (Ready for Dispatch)</label><select id="assignOrderSelect"></select></div>
       <div class="field"><label>Driver</label><select id="assignDriverSelect"></select></div>
       <p class="hint">Only drivers with complete compliance documents (passport, permit, yellow fever, vehicle registration, insurance) can be assigned.</p>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" data-modal-close>Cancel</button>
       <button class="btn btn-primary" id="confirmAssignBtn">Assign Driver</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="modalOrderDetail">
-  <div class="modal modal-lg">
-    <div class="modal-header"><h3 id="orderDetailTitle">Order Detail</h3><button class="modal-close" data-modal-close></button></div>
-    <div class="modal-body" id="orderDetailBody"></div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" data-modal-close>Close</button>
-      <button class="btn btn-primary">Generate Documents</button>
     </div>
   </div>
 </div>

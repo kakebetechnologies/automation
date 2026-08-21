@@ -43,13 +43,14 @@
       <h2>Welcome back</h2>
       <p class="sub">Sign in to continue to your dashboard.</p>
 
-      <div class="demo-note">Demo build — pick a role below and sign in with any credentials to preview that dashboard.</div>
+      <div class="demo-note">Demo build — pick a role below. Sign in with that role's seeded demo account (password: <strong>FalconDemo2026!</strong>).</div>
+      <div class="auth-error" id="loginError" style="display:none; margin-bottom:14px; padding:10px 12px; border-radius:8px; background:#fdecea; color:#b3261e; font-size:12.5px; font-weight:600;"></div>
 
       <div class="role-tabs" id="roleTabs">
-        <button class="role-tab active" data-role="merchant" data-href="merchant/dashboard.html"></button>
-        <button class="role-tab" data-role="supplier" data-href="supplier/dashboard.html"></button>
-        <button class="role-tab" data-role="client" data-href="client/dashboard.html"></button>
-        <button class="role-tab" data-role="driver" data-href="driver/dashboard.html"></button>
+        <button class="role-tab active" data-role="merchant" data-href="merchant/dashboard.php"></button>
+        <button class="role-tab" data-role="supplier" data-href="supplier/dashboard.php"></button>
+        <button class="role-tab" data-role="client" data-href="client/dashboard.php"></button>
+        <button class="role-tab" data-role="driver" data-href="driver/dashboard.php"></button>
       </div>
 
       <form id="loginForm">
@@ -59,7 +60,7 @@
         </div>
         <div class="field">
           <label>Password</label>
-          <input type="password" id="loginPassword" placeholder="••••••••" value="••••••••" required>
+          <input type="password" id="loginPassword" placeholder="••••••••" required>
         </div>
         <div class="flex items-center justify-between mt-8" style="margin-bottom:22px;">
           <label class="flex items-center gap-8" style="font-size:12.5px; color:var(--text-secondary); cursor:pointer;">
@@ -97,10 +98,36 @@
     });
   });
 
-  document.getElementById("loginForm").addEventListener("submit", (e) => {
+  const roleDashboard = { merchant: "merchant/dashboard.php", supplier: "supplier/dashboard.php", client: "client/dashboard.php", driver: "driver/dashboard.php" };
+
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const active = document.querySelector(".role-tab.active");
-    window.location.href = active.dataset.href;
+    const errorBox = document.getElementById("loginError");
+    const submitBtn = document.getElementById("loginSubmit");
+    errorBox.style.display = "none";
+    submitBtn.disabled = true;
+
+    const identifier = document.getElementById("loginEmail").value.trim();
+    const password = document.getElementById("loginPassword").value;
+
+    try {
+      const res = await fetch("api/auth/login.php", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier, password }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "Sign in failed");
+
+      // Redirect using the role the SERVER returned, not the tab the user had clicked —
+      // a client can't self-select into the merchant dashboard this way.
+      window.location.href = roleDashboard[data.user.role] || "index.html";
+    } catch (err) {
+      errorBox.textContent = err.message || "Invalid email/username or password.";
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+    }
   });
 </script>
 </body>
